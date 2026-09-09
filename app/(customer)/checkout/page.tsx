@@ -119,6 +119,8 @@ export default function CheckoutPage() {
     const [storeConfig, setStoreConfig] = useState<StoreCheckoutConfig | null>(null);
 
     const [loadingStoreConfig, setLoadingStoreConfig] = useState(true);
+    const [loadingCep, setLoadingCep] = useState(false);
+    const [cepError, setCepError] = useState("");
 
     const [customer, setCustomer] = useState<CustomerForm>({
         name: "",
@@ -242,6 +244,46 @@ export default function CheckoutPage() {
             ...current,
             [field]: value,
         }));
+    }
+
+    async function searchCep(zipCode: string) {
+        const normalizedZipCode = zipCode.replace(/\D/g, "");
+
+        if (normalizedZipCode.length !== 8) {
+            return;
+        }
+
+        try {
+            setLoadingCep(true);
+            setCepError("");
+
+            const response = await fetch(`https://viacep.com.br/ws/${normalizedZipCode}/json/`);
+
+            if (!response.ok) {
+                throw new Error("Não foi possível consultar o CEP.");
+            }
+
+            const data = await response.json();
+
+            if (data.erro) {
+                throw new Error("CEP não encontrado.");
+            }
+
+            setAddress((current) => ({
+                ...current,
+                zipCode: normalizedZipCode,
+                street: data.logradouro ?? "",
+                neighborhood: data.bairro ?? "",
+                city: data.localidade ?? "",
+                state: data.uf ?? "",
+            }));
+        } catch (error) {
+            setCepError(
+                error instanceof Error ? error.message : "Não foi possível consultar o CEP."
+            );
+        } finally {
+            setLoadingCep(false);
+        }
     }
 
     function selectPaymentMethod(method: PaymentMethod) {
@@ -528,13 +570,34 @@ export default function CheckoutPage() {
                     </div>
 
                     <div className="space-y-3">
-                        <input
-                            value={address.zipCode}
-                            onChange={(event) => updateAddress("zipCode", event.target.value)}
-                            placeholder="CEP"
-                            inputMode="numeric"
-                            className="w-full rounded-lg border p-3"
-                        />
+                        <div>
+                            <input
+                                value={address.zipCode}
+                                onChange={(event) => {
+                                    const value = event.target.value.replace(/\D/g, "").slice(0, 8);
+
+                                    updateAddress("zipCode", value);
+
+                                    if (value.length === 8) {
+                                        searchCep(value);
+                                    }
+                                }}
+                                placeholder="CEP"
+                                inputMode="numeric"
+                                maxLength={8}
+                                className="w-full rounded-lg border p-3"
+                            />
+
+                            {loadingCep && (
+                                <p className="text-muted-foreground mt-2 text-sm">
+                                    Buscando endereço...
+                                </p>
+                            )}
+
+                            {cepError && (
+                                <p className="text-destructive mt-2 text-sm">{cepError}</p>
+                            )}
+                        </div>
 
                         <input
                             value={address.street}
