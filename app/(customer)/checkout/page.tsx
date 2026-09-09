@@ -66,6 +66,15 @@ type CustomerLookupResponse = {
     } | null;
 };
 
+type AddressSearchResult = {
+    cep: string;
+    logradouro: string;
+    complemento: string;
+    bairro: string;
+    localidade: string;
+    uf: string;
+};
+
 const initialAddress: AddressForm = {
     street: "",
     number: "",
@@ -160,6 +169,14 @@ export default function CheckoutPage() {
     const [customerFound, setCustomerFound] = useState(false);
 
     const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+
+    const [addressSearch, setAddressSearch] = useState("");
+    const [addressSearchResults, setAddressSearchResults] = useState<AddressSearchResult[]>([]);
+    const [loadingAddressSearch, setLoadingAddressSearch] = useState(false);
+    const [addressSearchError, setAddressSearchError] = useState("");
+
+    const [loadingLocation, setLoadingLocation] = useState(false);
+    const [locationError, setLocationError] = useState("");
 
     useEffect(() => {
         if (items.length === 0) {
@@ -362,6 +379,147 @@ export default function CheckoutPage() {
             ...current,
             [field]: value,
         }));
+    }
+
+    function selectAddressSearchResult(result: AddressSearchResult) {
+        setSelectedAddressId(null);
+
+        setAddress((current) => ({
+            ...current,
+            zipCode: result.cep.replace(/\D/g, ""),
+            street: result.logradouro,
+            neighborhood: result.bairro,
+            city: result.localidade,
+            state: result.uf,
+        }));
+
+        setAddressSearch(result.logradouro);
+        setAddressSearchResults([]);
+        setAddressSearchError("");
+    }
+
+    async function useCurrentLocation() {
+        setLocationError("");
+
+        if (!navigator.geolocation) {
+            setLocationError("Seu dispositivo não oferece suporte à localização.");
+            return;
+        }
+
+        try {
+            setLoadingLocation(true);
+
+            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 60000,
+                });
+            });
+
+            const { latitude, longitude } = position.coords;
+
+            const response = await fetch(
+                `/api/geolocation/reverse?lat=${latitude}&lng=${longitude}`
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error ?? "Não foi possível identificar seu endereço.");
+            }
+
+            setSelectedAddressId(null);
+
+            setAddress((current) => ({
+                ...current,
+                street: data.street ?? "",
+                number: data.number ?? "",
+                neighborhood: data.neighborhood ?? "",
+                city: data.city ?? "",
+                state: data.state ?? "",
+                zipCode: data.zipCode ?? "",
+            }));
+
+            setAddressSearch(data.street ?? "");
+            setAddressSearchResults([]);
+            setCepError("");
+        } catch (error) {
+            if (error instanceof GeolocationPositionError) {
+                if (error.code === error.PERMISSION_DENIED) {
+                    setLocationError("Permita o acesso à localização para usar este recurso.");
+                    return;
+                }
+
+                if (error.code === error.POSITION_UNAVAILABLE) {
+                    setLocationError("Não foi possível determinar sua localização.");
+                    return;
+                }
+
+                if (error.code === error.TIMEOUT) {
+                    setLocationError("A localização demorou muito para responder.");
+                    return;
+                }
+            }
+
+            setLocationError(
+                error instanceof Error ? error.message : "Não foi possível usar sua localização."
+            );
+        } finally {
+            setLoadingLocation(false);
+        }
+    }
+
+    async function searchAddress() {
+        const street = addressSearch.trim();
+        const city = address.city.trim();
+        const state = address.state.trim().toUpperCase();
+
+        if (state.length !== 2) {
+            setAddressSearchError("Informe a UF antes de pesquisar.");
+            return;
+        }
+
+        if (city.length < 3) {
+            setAddressSearchError("Informe a cidade antes de pesquisar.");
+            return;
+        }
+
+        if (street.length < 3) {
+            setAddressSearchError("Digite pelo menos 3 caracteres da rua.");
+            return;
+        }
+
+        try {
+            setLoadingAddressSearch(true);
+            setAddressSearchError("");
+            setAddressSearchResults([]);
+
+            const response = await fetch(
+                `https://viacep.com.br/ws/${encodeURIComponent(state)}/${encodeURIComponent(
+                    city
+                )}/${encodeURIComponent(street)}/json/`
+            );
+
+            if (!response.ok) {
+                throw new Error("Não foi possível pesquisar o endereço.");
+            }
+
+            const data = (await response.json()) as AddressSearchResult[];
+
+            if (!Array.isArray(data) || data.length === 0) {
+                setAddressSearchError("Nenhum endereço encontrado.");
+                return;
+            }
+
+            setAddressSearchResults(data);
+        } catch (error) {
+            setAddressSearchError(
+                error instanceof Error ? error.message : "Não foi possível pesquisar o endereço."
+            );
+        } finally {
+            setLoadingAddressSearch(false);
+        }
     }
 
     async function searchCep(zipCode: string) {
@@ -749,6 +907,17 @@ export default function CheckoutPage() {
                         </p>
                     </div>
 
+                    <button
+                        type="button"
+                        onClick={useCurrentLocation}
+                        disabled={loadingLocation}
+                        className="w-full rounded-lg border p-3 font-medium"
+                    >
+                        {loadingLocation ? "Obtendo localização..." : "Usar minha localização"}
+                    </button>
+
+                    {locationError && <p className="text-destructive text-sm">{locationError}</p>}
+
                     <div className="space-y-3">
                         <div>
                             <input
@@ -831,6 +1000,60 @@ export default function CheckoutPage() {
                                 maxLength={2}
                                 className="w-full rounded-lg border p-3 uppercase"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Não sabe o CEP?</label>
+
+                            <div className="flex gap-2">
+                                <input
+                                    value={addressSearch}
+                                    onChange={(event) => {
+                                        setAddressSearch(event.target.value);
+                                        setAddressSearchError("");
+                                    }}
+                                    placeholder="Digite o nome da rua"
+                                    className="w-full rounded-lg border p-3"
+                                />
+
+                                <button
+                                    type="button"
+                                    onClick={searchAddress}
+                                    disabled={loadingAddressSearch}
+                                    className="rounded-lg border px-4"
+                                >
+                                    {loadingAddressSearch ? "Buscando..." : "Buscar"}
+                                </button>
+                            </div>
+
+                            {addressSearchError && (
+                                <p className="text-destructive text-sm">{addressSearchError}</p>
+                            )}
+
+                            {addressSearchResults.length > 0 && (
+                                <div className="space-y-2">
+                                    {addressSearchResults.map((result) => (
+                                        <button
+                                            key={`${result.cep}-${result.logradouro}`}
+                                            type="button"
+                                            onClick={() => selectAddressSearchResult(result)}
+                                            className="w-full rounded-lg border p-3 text-left"
+                                        >
+                                            <div className="font-medium">{result.logradouro}</div>
+
+                                            <div className="text-muted-foreground text-sm">
+                                                {result.bairro}
+                                                {result.bairro ? " — " : ""}
+                                                {result.localidade}/{result.uf}
+                                            </div>
+
+                                            <div className="text-muted-foreground text-sm">
+                                                CEP {result.cep}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <input
