@@ -3,6 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/stores/cart-store";
 
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from "@/components/ui/sheet";
+
 type FulfillmentType = "DELIVERY" | "PICKUP";
 
 type PaymentMethod = "PIX" | "CREDIT_CARD" | "DEBIT_CARD" | "CASH";
@@ -177,6 +186,9 @@ export default function CheckoutPage() {
 
     const [loadingLocation, setLoadingLocation] = useState(false);
     const [locationError, setLocationError] = useState("");
+
+    const [customerSheetOpen, setCustomerSheetOpen] = useState(false);
+    const [addressSheetOpen, setAddressSheetOpen] = useState(false);
 
     useEffect(() => {
         if (items.length === 0) {
@@ -354,6 +366,16 @@ export default function CheckoutPage() {
 
         return Math.max(cashValue - checkout.subtotal, 0);
     }, [cashValue, checkout, paymentMethod]);
+
+    function hasAddress() {
+        return Boolean(
+            address.street ||
+            address.number ||
+            address.neighborhood ||
+            address.city ||
+            address.zipCode
+        );
+    }
 
     function formatPhone(value: string) {
         const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -763,97 +785,109 @@ export default function CheckoutPage() {
     return (
         <main className="mx-auto max-w-2xl px-4 py-6">
             <h1 className="text-2xl font-bold">Finalizar pedido</h1>
-            <section className="mt-8 space-y-4">
-                <div>
-                    <h2 className="text-lg font-semibold">Seus dados</h2>
+            <section className="mt-8 space-y-3">
+                <h2 className="text-lg font-semibold">Seus dados</h2>
 
-                    <p className="text-muted-foreground text-sm">
-                        Precisamos dessas informações para identificar seu pedido.
-                    </p>
-                </div>
+                <Sheet open={customerSheetOpen} onOpenChange={setCustomerSheetOpen}>
+                    <SheetTrigger asChild>
+                        <button type="button" className="w-full rounded-xl border p-4 text-left">
+                            {customer.name || customer.phone ? (
+                                <div className="space-y-1">
+                                    <p className="font-medium">
+                                        {customer.name || "Complete seus dados"}
+                                    </p>
 
-                <div className="space-y-3">
-                    <input
-                        value={customer.name}
-                        onChange={(event) => updateCustomer("name", event.target.value)}
-                        placeholder="Nome"
-                        className="w-full rounded-lg border p-3"
-                    />
+                                    {customer.phone && (
+                                        <p className="text-muted-foreground text-sm">
+                                            {customer.phone}
+                                        </p>
+                                    )}
 
-                    <input
-                        value={customer.phone}
-                        onChange={(event) => {
-                            const formattedPhone = formatPhone(event.target.value);
+                                    {customer.email && (
+                                        <p className="text-muted-foreground text-sm">
+                                            {customer.email}
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div>
+                                    <p className="font-medium">Adicionar seus dados</p>
 
-                            updateCustomer("phone", formattedPhone);
+                                    <p className="text-muted-foreground text-sm">
+                                        Nome, telefone e e-mail
+                                    </p>
+                                </div>
+                            )}
+                        </button>
+                    </SheetTrigger>
 
-                            if (formattedPhone.replace(/\D/g, "").length < 10) {
-                                setCustomerFound(false);
-                                setSavedAddresses([]);
-                                lastSearchedPhone.current = "";
-                            }
-                        }}
-                        placeholder="Telefone"
-                        inputMode="tel"
-                        maxLength={15}
-                        className="w-full rounded-lg border p-3"
-                    />
+                    <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto">
+                        <SheetHeader>
+                            <SheetTitle>Seus dados</SheetTitle>
 
-                    {loadingCustomer && (
-                        <p className="text-muted-foreground text-sm">Buscando seus dados...</p>
-                    )}
+                            <SheetDescription>
+                                Informe seus dados para identificar o pedido.
+                            </SheetDescription>
+                        </SheetHeader>
 
-                    {customerFound && (
-                        <p className="text-sm">
-                            Cliente encontrado. Seus dados foram preenchidos automaticamente.
-                        </p>
-                    )}
+                        <div className="space-y-3 px-4 pb-6">
+                            <input
+                                value={customer.phone}
+                                onChange={(event) => {
+                                    const formattedPhone = formatPhone(event.target.value);
 
-                    <input
-                        value={customer.email}
-                        onChange={(event) => updateCustomer("email", event.target.value)}
-                        placeholder="E-mail (opcional)"
-                        inputMode="email"
-                        className="w-full rounded-lg border p-3"
-                    />
+                                    updateCustomer("phone", formattedPhone);
 
-                    {savedAddresses.length > 0 && fulfillmentType === "DELIVERY" && (
-                        <div className="space-y-2">
-                            <p className="text-sm font-medium">Endereços salvos</p>
+                                    if (formattedPhone.replace(/\D/g, "").length < 10) {
+                                        setCustomerFound(false);
+                                        setSavedAddresses([]);
+                                        lastSearchedPhone.current = "";
+                                    }
+                                }}
+                                placeholder="Telefone"
+                                inputMode="tel"
+                                maxLength={15}
+                                className="w-full rounded-lg border p-3"
+                            />
 
-                            {savedAddresses.map((savedAddress) => (
-                                <button
-                                    key={savedAddress.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setSelectedAddressId(savedAddress.id);
+                            {loadingCustomer && (
+                                <p className="text-muted-foreground text-sm">
+                                    Buscando seus dados...
+                                </p>
+                            )}
 
-                                        setAddress({
-                                            street: savedAddress.street,
-                                            number: savedAddress.number,
-                                            complement: savedAddress.complement ?? "",
-                                            neighborhood: savedAddress.neighborhood,
-                                            city: savedAddress.city,
-                                            state: savedAddress.state,
-                                            zipCode: savedAddress.zipCode,
-                                            reference: savedAddress.reference ?? "",
-                                        });
-                                    }}
-                                    className="w-full rounded-lg border p-3 text-left"
-                                >
-                                    <div className="font-medium">
-                                        {savedAddress.label ?? "Endereço salvo"}
-                                    </div>
+                            {customerFound && (
+                                <p className="text-sm">
+                                    Cliente encontrado. Seus dados foram preenchidos
+                                    automaticamente.
+                                </p>
+                            )}
 
-                                    <div className="text-muted-foreground text-sm">
-                                        {savedAddress.street}, {savedAddress.number} —{" "}
-                                        {savedAddress.neighborhood}
-                                    </div>
-                                </button>
-                            ))}
+                            <input
+                                value={customer.name}
+                                onChange={(event) => updateCustomer("name", event.target.value)}
+                                placeholder="Nome"
+                                className="w-full rounded-lg border p-3"
+                            />
+
+                            <input
+                                value={customer.email}
+                                onChange={(event) => updateCustomer("email", event.target.value)}
+                                placeholder="E-mail"
+                                inputMode="email"
+                                className="w-full rounded-lg border p-3"
+                            />
+
+                            <button
+                                type="button"
+                                onClick={() => setCustomerSheetOpen(false)}
+                                className="w-full rounded-lg border p-3 font-medium"
+                            >
+                                Confirmar
+                            </button>
                         </div>
-                    )}
-                </div>
+                    </SheetContent>
+                </Sheet>
             </section>
             <section className="mt-8 space-y-4">
                 <div>
@@ -898,171 +932,250 @@ export default function CheckoutPage() {
             </section>
 
             {fulfillmentType === "DELIVERY" && (
-                <section className="mt-8 space-y-4">
-                    <div>
-                        <h2 className="text-lg font-semibold">Endereço de entrega</h2>
+                <section className="space-y-3">
+                    <h2 className="text-lg font-semibold">Endereço de entrega</h2>
 
-                        <p className="text-muted-foreground text-sm">
-                            Informe onde devemos entregar.
-                        </p>
-                    </div>
+                    <Sheet open={addressSheetOpen} onOpenChange={setAddressSheetOpen}>
+                        <SheetTrigger asChild>
+                            <button
+                                type="button"
+                                className="w-full rounded-xl border p-4 text-left"
+                            >
+                                {hasAddress() ? (
+                                    <div className="space-y-1">
+                                        <p className="font-medium">
+                                            {address.street}
+                                            {address.number ? `, ${address.number}` : ""}
+                                        </p>
 
-                    <button
-                        type="button"
-                        onClick={useCurrentLocation}
-                        disabled={loadingLocation}
-                        className="w-full rounded-lg border p-3 font-medium"
-                    >
-                        {loadingLocation ? "Obtendo localização..." : "Usar minha localização"}
-                    </button>
+                                        <p className="text-muted-foreground text-sm">
+                                            {address.neighborhood}
+                                            {address.neighborhood && address.city ? " — " : ""}
+                                            {address.city}
+                                            {address.state ? `/${address.state}` : ""}
+                                        </p>
 
-                    {locationError && <p className="text-destructive text-sm">{locationError}</p>}
+                                        {address.zipCode && (
+                                            <p className="text-muted-foreground text-sm">
+                                                CEP {address.zipCode}
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <p className="font-medium">Adicionar endereço</p>
 
-                    <div className="space-y-3">
-                        <div>
-                            <input
-                                value={address.zipCode}
-                                onChange={(event) => {
-                                    const value = event.target.value.replace(/\D/g, "").slice(0, 8);
+                                        <p className="text-muted-foreground text-sm">
+                                            Escolha onde receber seu pedido
+                                        </p>
+                                    </div>
+                                )}
+                            </button>
+                        </SheetTrigger>
 
-                                    updateAddress("zipCode", value);
+                        <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto">
+                            <SheetHeader>
+                                <SheetTitle>Endereço de entrega</SheetTitle>
 
-                                    if (value.length === 8) {
-                                        searchCep(value);
-                                    }
-                                }}
-                                placeholder="CEP"
-                                inputMode="numeric"
-                                maxLength={8}
-                                className="w-full rounded-lg border p-3"
-                            />
+                                <SheetDescription>
+                                    Escolha um endereço salvo ou informe um novo endereço.
+                                </SheetDescription>
+                            </SheetHeader>
 
-                            {loadingCep && (
-                                <p className="text-muted-foreground mt-2 text-sm">
-                                    Buscando endereço...
-                                </p>
-                            )}
+                            <div className="space-y-4 px-4 pb-6">
+                                <button
+                                    type="button"
+                                    onClick={useCurrentLocation}
+                                    disabled={loadingLocation}
+                                    className="w-full rounded-lg border p-3 font-medium"
+                                >
+                                    {loadingLocation
+                                        ? "Obtendo localização..."
+                                        : "Usar minha localização"}
+                                </button>
 
-                            {cepError && (
-                                <p className="text-destructive mt-2 text-sm">{cepError}</p>
-                            )}
-                        </div>
+                                {locationError && (
+                                    <p className="text-destructive text-sm">{locationError}</p>
+                                )}
 
-                        <input
-                            value={address.street}
-                            onChange={(event) => updateAddress("street", event.target.value)}
-                            placeholder="Rua"
-                            className="w-full rounded-lg border p-3"
-                        />
+                                <div className="space-y-3">
+                                    <div>
+                                        <input
+                                            value={address.zipCode}
+                                            onChange={(event) => {
+                                                const value = event.target.value
+                                                    .replace(/\D/g, "")
+                                                    .slice(0, 8);
 
-                        <div className="grid grid-cols-3 gap-3">
-                            <input
-                                value={address.number}
-                                onChange={(event) => updateAddress("number", event.target.value)}
-                                placeholder="Número"
-                                className="w-full rounded-lg border p-3"
-                            />
+                                                updateAddress("zipCode", value);
 
-                            <input
-                                value={address.complement}
-                                onChange={(event) =>
-                                    updateAddress("complement", event.target.value)
-                                }
-                                placeholder="Complemento"
-                                className="col-span-2 w-full rounded-lg border p-3"
-                            />
-                        </div>
+                                                if (value.length === 8) {
+                                                    searchCep(value);
+                                                }
+                                            }}
+                                            placeholder="CEP"
+                                            inputMode="numeric"
+                                            maxLength={8}
+                                            className="w-full rounded-lg border p-3"
+                                        />
 
-                        <input
-                            value={address.neighborhood}
-                            onChange={(event) => updateAddress("neighborhood", event.target.value)}
-                            placeholder="Bairro"
-                            className="w-full rounded-lg border p-3"
-                        />
+                                        {loadingCep && (
+                                            <p className="text-muted-foreground mt-2 text-sm">
+                                                Buscando endereço...
+                                            </p>
+                                        )}
 
-                        <div className="grid grid-cols-4 gap-3">
-                            <input
-                                value={address.city}
-                                onChange={(event) => updateAddress("city", event.target.value)}
-                                placeholder="Cidade"
-                                className="col-span-3 w-full rounded-lg border p-3"
-                            />
+                                        {cepError && (
+                                            <p className="text-destructive mt-2 text-sm">
+                                                {cepError}
+                                            </p>
+                                        )}
+                                    </div>
 
-                            <input
-                                value={address.state}
-                                onChange={(event) =>
-                                    updateAddress(
-                                        "state",
-                                        event.target.value.toUpperCase().slice(0, 2)
-                                    )
-                                }
-                                placeholder="UF"
-                                maxLength={2}
-                                className="w-full rounded-lg border p-3 uppercase"
-                            />
-                        </div>
+                                    <input
+                                        value={address.street}
+                                        onChange={(event) =>
+                                            updateAddress("street", event.target.value)
+                                        }
+                                        placeholder="Rua"
+                                        className="w-full rounded-lg border p-3"
+                                    />
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium">Não sabe o CEP?</label>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <input
+                                            value={address.number}
+                                            onChange={(event) =>
+                                                updateAddress("number", event.target.value)
+                                            }
+                                            placeholder="Número"
+                                            className="w-full rounded-lg border p-3"
+                                        />
 
-                            <div className="flex gap-2">
-                                <input
-                                    value={addressSearch}
-                                    onChange={(event) => {
-                                        setAddressSearch(event.target.value);
-                                        setAddressSearchError("");
-                                    }}
-                                    placeholder="Digite o nome da rua"
-                                    className="w-full rounded-lg border p-3"
-                                />
+                                        <input
+                                            value={address.complement}
+                                            onChange={(event) =>
+                                                updateAddress("complement", event.target.value)
+                                            }
+                                            placeholder="Complemento"
+                                            className="col-span-2 w-full rounded-lg border p-3"
+                                        />
+                                    </div>
+
+                                    <input
+                                        value={address.neighborhood}
+                                        onChange={(event) =>
+                                            updateAddress("neighborhood", event.target.value)
+                                        }
+                                        placeholder="Bairro"
+                                        className="w-full rounded-lg border p-3"
+                                    />
+
+                                    <div className="grid grid-cols-4 gap-3">
+                                        <input
+                                            value={address.city}
+                                            onChange={(event) =>
+                                                updateAddress("city", event.target.value)
+                                            }
+                                            placeholder="Cidade"
+                                            className="col-span-3 w-full rounded-lg border p-3"
+                                        />
+
+                                        <input
+                                            value={address.state}
+                                            onChange={(event) =>
+                                                updateAddress(
+                                                    "state",
+                                                    event.target.value.toUpperCase().slice(0, 2)
+                                                )
+                                            }
+                                            placeholder="UF"
+                                            maxLength={2}
+                                            className="w-full rounded-lg border p-3 uppercase"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">
+                                            Não sabe o CEP?
+                                        </label>
+
+                                        <div className="flex gap-2">
+                                            <input
+                                                value={addressSearch}
+                                                onChange={(event) => {
+                                                    setAddressSearch(event.target.value);
+                                                    setAddressSearchError("");
+                                                }}
+                                                placeholder="Digite o nome da rua"
+                                                className="w-full rounded-lg border p-3"
+                                            />
+
+                                            <button
+                                                type="button"
+                                                onClick={searchAddress}
+                                                disabled={loadingAddressSearch}
+                                                className="rounded-lg border px-4"
+                                            >
+                                                {loadingAddressSearch ? "Buscando..." : "Buscar"}
+                                            </button>
+                                        </div>
+
+                                        {addressSearchError && (
+                                            <p className="text-destructive text-sm">
+                                                {addressSearchError}
+                                            </p>
+                                        )}
+
+                                        {addressSearchResults.length > 0 && (
+                                            <div className="space-y-2">
+                                                {addressSearchResults.map((result) => (
+                                                    <button
+                                                        key={`${result.cep}-${result.logradouro}`}
+                                                        type="button"
+                                                        onClick={() =>
+                                                            selectAddressSearchResult(result)
+                                                        }
+                                                        className="w-full rounded-lg border p-3 text-left"
+                                                    >
+                                                        <div className="font-medium">
+                                                            {result.logradouro}
+                                                        </div>
+
+                                                        <div className="text-muted-foreground text-sm">
+                                                            {result.bairro}
+                                                            {result.bairro ? " — " : ""}
+                                                            {result.localidade}/{result.uf}
+                                                        </div>
+
+                                                        <div className="text-muted-foreground text-sm">
+                                                            CEP {result.cep}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <input
+                                        value={address.reference}
+                                        onChange={(event) =>
+                                            updateAddress("reference", event.target.value)
+                                        }
+                                        placeholder="Ponto de referência (opcional)"
+                                        className="w-full rounded-lg border p-3"
+                                    />
+                                </div>
 
                                 <button
                                     type="button"
-                                    onClick={searchAddress}
-                                    disabled={loadingAddressSearch}
-                                    className="rounded-lg border px-4"
+                                    onClick={() => setAddressSheetOpen(false)}
+                                    className="w-full rounded-lg border p-3 font-medium"
                                 >
-                                    {loadingAddressSearch ? "Buscando..." : "Buscar"}
+                                    Confirmar endereço
                                 </button>
                             </div>
-
-                            {addressSearchError && (
-                                <p className="text-destructive text-sm">{addressSearchError}</p>
-                            )}
-
-                            {addressSearchResults.length > 0 && (
-                                <div className="space-y-2">
-                                    {addressSearchResults.map((result) => (
-                                        <button
-                                            key={`${result.cep}-${result.logradouro}`}
-                                            type="button"
-                                            onClick={() => selectAddressSearchResult(result)}
-                                            className="w-full rounded-lg border p-3 text-left"
-                                        >
-                                            <div className="font-medium">{result.logradouro}</div>
-
-                                            <div className="text-muted-foreground text-sm">
-                                                {result.bairro}
-                                                {result.bairro ? " — " : ""}
-                                                {result.localidade}/{result.uf}
-                                            </div>
-
-                                            <div className="text-muted-foreground text-sm">
-                                                CEP {result.cep}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <input
-                            value={address.reference}
-                            onChange={(event) => updateAddress("reference", event.target.value)}
-                            placeholder="Ponto de referência (opcional)"
-                            className="w-full rounded-lg border p-3"
-                        />
-                    </div>
+                        </SheetContent>
+                    </Sheet>
                 </section>
             )}
 
