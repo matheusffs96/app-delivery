@@ -43,6 +43,29 @@ type CustomerForm = {
     email: string;
 };
 
+type SavedAddress = {
+    id: string;
+    label: string | null;
+    street: string;
+    number: string;
+    complement: string | null;
+    neighborhood: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    reference: string | null;
+};
+
+type CustomerLookupResponse = {
+    customer: {
+        id: string;
+        name: string;
+        email: string | null;
+        phone: string;
+        addresses: SavedAddress[];
+    } | null;
+};
+
 const initialAddress: AddressForm = {
     street: "",
     number: "",
@@ -129,6 +152,10 @@ export default function CheckoutPage() {
     });
 
     const [submitting, setSubmitting] = useState(false);
+
+    const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+    const [loadingCustomer, setLoadingCustomer] = useState(false);
+    const [customerFound, setCustomerFound] = useState(false);
 
     useEffect(() => {
         if (items.length === 0) {
@@ -232,6 +259,16 @@ export default function CheckoutPage() {
         return Math.max(cashValue - checkout.subtotal, 0);
     }, [cashValue, checkout, paymentMethod]);
 
+    function formatPhone(value: string) {
+        const digits = value.replace(/\D/g, "").slice(0, 11);
+
+        if (digits.length <= 10) {
+            return digits.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{4})(\d)/, "$1-$2");
+        }
+
+        return digits.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
+    }
+
     function updateCustomer(field: keyof CustomerForm, value: string) {
         setCustomer((current) => ({
             ...current,
@@ -244,6 +281,54 @@ export default function CheckoutPage() {
             ...current,
             [field]: value,
         }));
+    }
+
+    async function searchCustomer(phone: string) {
+        const normalizedPhone = phone.replace(/\D/g, "");
+
+        if (normalizedPhone.length < 10) {
+            setCustomerFound(false);
+            setSavedAddresses([]);
+            return;
+        }
+
+        try {
+            setLoadingCustomer(true);
+
+            const response = await fetch(
+                `/api/customers/by-phone?phone=${encodeURIComponent(normalizedPhone)}`
+            );
+
+            const data = (await response.json()) as CustomerLookupResponse & {
+                error?: string;
+            };
+
+            if (!response.ok) {
+                throw new Error(data.error ?? "Não foi possível buscar o cliente.");
+            }
+
+            if (!data.customer) {
+                setCustomerFound(false);
+                setSavedAddresses([]);
+                return;
+            }
+
+            setCustomerFound(true);
+            setSavedAddresses(data.customer.addresses);
+
+            setCustomer((current) => ({
+                ...current,
+                name: data.customer?.name ?? "",
+                email: data.customer?.email ?? "",
+            }));
+        } catch (error) {
+            setCustomerFound(false);
+            setSavedAddresses([]);
+
+            setError(error instanceof Error ? error.message : "Não foi possível buscar o cliente.");
+        } finally {
+            setLoadingCustomer(false);
+        }
     }
 
     async function searchCep(zipCode: string) {
@@ -502,11 +587,70 @@ export default function CheckoutPage() {
 
                     <input
                         value={customer.phone}
-                        onChange={(event) => updateCustomer("phone", event.target.value)}
+                        onChange={(event) => {
+                            const formattedPhone = formatPhone(event.target.value);
+
+                            updateCustomer("phone", formattedPhone);
+
+                            const normalizedPhone = formattedPhone.replace(/\D/g, "");
+
+                            if (normalizedPhone.length >= 10) {
+                                searchCustomer(formattedPhone);
+                            } else {
+                                setCustomerFound(false);
+                                setSavedAddresses([]);
+                            }
+                        }}
                         placeholder="Telefone"
                         inputMode="tel"
+                        maxLength={15}
                         className="w-full rounded-lg border p-3"
                     />
+
+                    {loadingCustomer && (
+                        <p className="text-muted-foreground text-sm">Buscando seus dados...</p>
+                    )}
+
+                    {customerFound && (
+                        <p className="text-sm">
+                            Cliente encontrado. Seus dados foram preenchidos automaticamente.
+                        </p>
+                    )}
+
+                    {savedAddresses.length > 0 && fulfillmentType === "DELIVERY" && (
+                        <div className="space-y-2">
+                            <p className="text-sm font-medium">Endereços salvos</p>
+
+                            {savedAddresses.map((savedAddress) => (
+                                <button
+                                    key={savedAddress.id}
+                                    type="button"
+                                    onClick={() =>
+                                        setAddress({
+                                            street: savedAddress.street,
+                                            number: savedAddress.number,
+                                            complement: savedAddress.complement ?? "",
+                                            neighborhood: savedAddress.neighborhood,
+                                            city: savedAddress.city,
+                                            state: savedAddress.state,
+                                            zipCode: savedAddress.zipCode,
+                                            reference: savedAddress.reference ?? "",
+                                        })
+                                    }
+                                    className="w-full rounded-lg border p-3 text-left"
+                                >
+                                    <div className="font-medium">
+                                        {savedAddress.label ?? "Endereço salvo"}
+                                    </div>
+
+                                    <div className="text-muted-foreground text-sm">
+                                        {savedAddress.street}, {savedAddress.number} —{" "}
+                                        {savedAddress.neighborhood}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     <input
                         value={customer.email}
