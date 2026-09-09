@@ -57,6 +57,8 @@ export const checkoutSchema = z
 
         fulfillmentType: z.enum(["DELIVERY", "PICKUP"]),
 
+        addressId: z.string().optional(),
+
         address: checkoutAddressSchema.optional(),
 
         paymentMethod: z.enum(["PIX", "CREDIT_CARD", "DEBIT_CARD", "CASH"]),
@@ -64,7 +66,7 @@ export const checkoutSchema = z
         cashReceived: z.number().positive().optional(),
     })
     .superRefine((data, ctx) => {
-        if (data.fulfillmentType === "DELIVERY" && !data.address) {
+        if (data.fulfillmentType === "DELIVERY" && !data.addressId && !data.address) {
             ctx.addIssue({
                 code: "custom",
                 path: ["address"],

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/stores/cart-store";
 
 type FulfillmentType = "DELIVERY" | "PICKUP";
@@ -125,6 +125,8 @@ const paymentMethodLabels: Record<
 };
 
 export default function CheckoutPage() {
+    const lastSearchedPhone = useRef("");
+
     const clear = useCartStore((state) => state.clear);
     const items = useCartStore((state) => state.items);
 
@@ -156,6 +158,8 @@ export default function CheckoutPage() {
     const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
     const [loadingCustomer, setLoadingCustomer] = useState(false);
     const [customerFound, setCustomerFound] = useState(false);
+
+    const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
 
     useEffect(() => {
         if (items.length === 0) {
@@ -249,6 +253,81 @@ export default function CheckoutPage() {
         loadStoreConfig();
     }, []);
 
+    async function searchCustomer(phone: string) {
+        const normalizedPhone = phone.replace(/\D/g, "");
+
+        if (normalizedPhone.length < 10) {
+            setCustomerFound(false);
+            setSavedAddresses([]);
+            return;
+        }
+
+        try {
+            setLoadingCustomer(true);
+
+            const response = await fetch(
+                `/api/customers/by-phone?phone=${encodeURIComponent(normalizedPhone)}`
+            );
+
+            const data = (await response.json()) as CustomerLookupResponse & {
+                error?: string;
+            };
+
+            if (!response.ok) {
+                throw new Error(data.error ?? "Não foi possível buscar o cliente.");
+            }
+
+            if (!data.customer) {
+                setCustomerFound(false);
+                setSavedAddresses([]);
+
+                setCustomer((current) => ({
+                    ...current,
+                    name: "",
+                    email: "",
+                }));
+
+                return;
+            }
+            setCustomerFound(true);
+            setSavedAddresses(data.customer.addresses);
+
+            setCustomer((current) => ({
+                ...current,
+                name: data.customer?.name ?? "",
+                email: data.customer?.email ?? "",
+            }));
+        } catch (error) {
+            setCustomerFound(false);
+            setSavedAddresses([]);
+
+            setError(error instanceof Error ? error.message : "Não foi possível buscar o cliente.");
+        } finally {
+            setLoadingCustomer(false);
+        }
+    }
+
+    useEffect(() => {
+        const normalizedPhone = customer.phone.replace(/\D/g, "");
+
+        if (normalizedPhone.length < 10) {
+            return;
+        }
+
+        if (lastSearchedPhone.current === normalizedPhone) {
+            return;
+        }
+
+        const timeout = window.setTimeout(() => {
+            lastSearchedPhone.current = normalizedPhone;
+            searchCustomer(normalizedPhone);
+        }, 500);
+
+        return () => {
+            window.clearTimeout(timeout);
+        };
+    }, [customer.phone]);
+
     const cashValue = useMemo(() => parseCurrency(cashReceived), [cashReceived]);
 
     const change = useMemo(() => {
@@ -277,58 +356,12 @@ export default function CheckoutPage() {
     }
 
     function updateAddress(field: keyof AddressForm, value: string) {
+        setSelectedAddressId(null);
+
         setAddress((current) => ({
             ...current,
             [field]: value,
         }));
-    }
-
-    async function searchCustomer(phone: string) {
-        const normalizedPhone = phone.replace(/\D/g, "");
-
-        if (normalizedPhone.length < 10) {
-            setCustomerFound(false);
-            setSavedAddresses([]);
-            return;
-        }
-
-        try {
-            setLoadingCustomer(true);
-
-            const response = await fetch(
-                `/api/customers/by-phone?phone=${encodeURIComponent(normalizedPhone)}`
-            );
-
-            const data = (await response.json()) as CustomerLookupResponse & {
-                error?: string;
-            };
-
-            if (!response.ok) {
-                throw new Error(data.error ?? "Não foi possível buscar o cliente.");
-            }
-
-            if (!data.customer) {
-                setCustomerFound(false);
-                setSavedAddresses([]);
-                return;
-            }
-
-            setCustomerFound(true);
-            setSavedAddresses(data.customer.addresses);
-
-            setCustomer((current) => ({
-                ...current,
-                name: data.customer?.name ?? "",
-                email: data.customer?.email ?? "",
-            }));
-        } catch (error) {
-            setCustomerFound(false);
-            setSavedAddresses([]);
-
-            setError(error instanceof Error ? error.message : "Não foi possível buscar o cliente.");
-        } finally {
-            setLoadingCustomer(false);
-        }
     }
 
     async function searchCep(zipCode: string) {
@@ -339,6 +372,7 @@ export default function CheckoutPage() {
         }
 
         try {
+            setSelectedAddressId(null);
             setLoadingCep(true);
             setCepError("");
 
@@ -501,7 +535,10 @@ export default function CheckoutPage() {
 
             fulfillmentType,
 
-            address: fulfillmentType === "DELIVERY" ? address : undefined,
+            addressId:
+                fulfillmentType === "DELIVERY" && selectedAddressId ? selectedAddressId : undefined,
+
+            address: fulfillmentType === "DELIVERY" && !selectedAddressId ? address : undefined,
 
             paymentMethod,
 
@@ -592,13 +629,10 @@ export default function CheckoutPage() {
 
                             updateCustomer("phone", formattedPhone);
 
-                            const normalizedPhone = formattedPhone.replace(/\D/g, "");
-
-                            if (normalizedPhone.length >= 10) {
-                                searchCustomer(formattedPhone);
-                            } else {
+                            if (formattedPhone.replace(/\D/g, "").length < 10) {
                                 setCustomerFound(false);
                                 setSavedAddresses([]);
+                                lastSearchedPhone.current = "";
                             }
                         }}
                         placeholder="Telefone"
@@ -617,6 +651,14 @@ export default function CheckoutPage() {
                         </p>
                     )}
 
+                    <input
+                        value={customer.email}
+                        onChange={(event) => updateCustomer("email", event.target.value)}
+                        placeholder="E-mail (opcional)"
+                        inputMode="email"
+                        className="w-full rounded-lg border p-3"
+                    />
+
                     {savedAddresses.length > 0 && fulfillmentType === "DELIVERY" && (
                         <div className="space-y-2">
                             <p className="text-sm font-medium">Endereços salvos</p>
@@ -625,7 +667,9 @@ export default function CheckoutPage() {
                                 <button
                                     key={savedAddress.id}
                                     type="button"
-                                    onClick={() =>
+                                    onClick={() => {
+                                        setSelectedAddressId(savedAddress.id);
+
                                         setAddress({
                                             street: savedAddress.street,
                                             number: savedAddress.number,
@@ -635,8 +679,8 @@ export default function CheckoutPage() {
                                             state: savedAddress.state,
                                             zipCode: savedAddress.zipCode,
                                             reference: savedAddress.reference ?? "",
-                                        })
-                                    }
+                                        });
+                                    }}
                                     className="w-full rounded-lg border p-3 text-left"
                                 >
                                     <div className="font-medium">
@@ -651,14 +695,6 @@ export default function CheckoutPage() {
                             ))}
                         </div>
                     )}
-
-                    <input
-                        value={customer.email}
-                        onChange={(event) => updateCustomer("email", event.target.value)}
-                        placeholder="E-mail (opcional)"
-                        inputMode="email"
-                        className="w-full rounded-lg border p-3"
-                    />
                 </div>
             </section>
             <section className="mt-8 space-y-4">

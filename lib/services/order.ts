@@ -209,34 +209,55 @@ export async function createOrder(input: CheckoutInput) {
     return prisma.$transaction(async (tx) => {
         let addressId: string | null = null;
 
+        let deliveryAddress: {
+            id: string;
+            street: string;
+            number: string;
+            complement: string | null;
+            neighborhood: string;
+            city: string;
+            state: string;
+            zipCode: string;
+            reference: string | null;
+        } | null = null;
+
         if (input.fulfillmentType === "DELIVERY") {
-            if (!input.address) {
-                throw new Error("Informe o endereço para entrega.");
+            if (input.addressId) {
+                const savedAddress = await tx.address.findFirst({
+                    where: {
+                        id: input.addressId,
+                        customerId: customer.id,
+                    },
+                });
+
+                if (!savedAddress) {
+                    throw new Error("Endereço salvo não encontrado.");
+                }
+
+                deliveryAddress = savedAddress;
+                addressId = savedAddress.id;
+            } else {
+                if (!input.address) {
+                    throw new Error("Informe o endereço para entrega.");
+                }
+
+                const address = await tx.address.create({
+                    data: {
+                        customerId: customer.id,
+                        street: input.address.street,
+                        number: input.address.number,
+                        complement: input.address.complement || null,
+                        neighborhood: input.address.neighborhood,
+                        city: input.address.city,
+                        state: input.address.state,
+                        zipCode: input.address.zipCode,
+                        reference: input.address.reference || null,
+                    },
+                });
+
+                deliveryAddress = address;
+                addressId = address.id;
             }
-
-            const address = await tx.address.create({
-                data: {
-                    customerId: customer.id,
-
-                    street: input.address.street,
-
-                    number: input.address.number,
-
-                    complement: input.address.complement || null,
-
-                    neighborhood: input.address.neighborhood,
-
-                    city: input.address.city,
-
-                    state: input.address.state,
-
-                    zipCode: input.address.zipCode,
-
-                    reference: input.address.reference || null,
-                },
-            });
-
-            addressId = address.id;
         }
 
         const order = await tx.order.create({
@@ -257,25 +278,14 @@ export async function createOrder(input: CheckoutInput) {
 
                 total,
 
-                deliveryStreet: input.fulfillmentType === "DELIVERY" ? input.address?.street : null,
-
-                deliveryNumber: input.fulfillmentType === "DELIVERY" ? input.address?.number : null,
-
-                deliveryComplement:
-                    input.fulfillmentType === "DELIVERY" ? input.address?.complement || null : null,
-
-                deliveryNeighborhood:
-                    input.fulfillmentType === "DELIVERY" ? input.address?.neighborhood : null,
-
-                deliveryCity: input.fulfillmentType === "DELIVERY" ? input.address?.city : null,
-
-                deliveryState: input.fulfillmentType === "DELIVERY" ? input.address?.state : null,
-
-                deliveryZipCode:
-                    input.fulfillmentType === "DELIVERY" ? input.address?.zipCode : null,
-
-                deliveryReference:
-                    input.fulfillmentType === "DELIVERY" ? input.address?.reference || null : null,
+                deliveryStreet: deliveryAddress?.street ?? null,
+                deliveryNumber: deliveryAddress?.number ?? null,
+                deliveryComplement: deliveryAddress?.complement ?? null,
+                deliveryNeighborhood: deliveryAddress?.neighborhood ?? null,
+                deliveryCity: deliveryAddress?.city ?? null,
+                deliveryState: deliveryAddress?.state ?? null,
+                deliveryZipCode: deliveryAddress?.zipCode ?? null,
+                deliveryReference: deliveryAddress?.reference ?? null,
 
                 cashReceived:
                     input.paymentMethod === "CASH" && input.cashReceived !== undefined
