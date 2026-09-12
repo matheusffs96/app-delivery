@@ -12,6 +12,8 @@ import {
     SheetTrigger,
 } from "@/components/ui/sheet";
 
+import { toast } from "sonner";
+
 type FulfillmentType = "DELIVERY" | "PICKUP";
 
 type PaymentMethod = "PIX" | "CREDIT_CARD" | "DEBIT_CARD" | "CASH";
@@ -84,6 +86,8 @@ type AddressSearchResult = {
     uf: string;
 };
 
+type AddressSheetMode = "select" | "form";
+
 const initialAddress: AddressForm = {
     street: "",
     number: "",
@@ -150,9 +154,13 @@ export default function CheckoutPage() {
 
     const [checkout, setCheckout] = useState<CheckoutResult | null>(null);
 
-    const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>("DELIVERY");
+    const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType | null>(null);
+    const [addressSheetMode, setAddressSheetMode] = useState<AddressSheetMode>("select");
 
     const [address, setAddress] = useState<AddressForm>(initialAddress);
+    const [addressDraft, setAddressDraft] = useState<AddressForm>(initialAddress);
+    const [selectedAddressDraftId, setSelectedAddressDraftId] = useState<string | null>(null);
+
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
 
     const [cashReceived, setCashReceived] = useState("");
@@ -165,6 +173,7 @@ export default function CheckoutPage() {
     const [loadingCep, setLoadingCep] = useState(false);
     const [cepError, setCepError] = useState("");
 
+    const [customerIdentified, setCustomerIdentified] = useState<boolean>(false);
     const [customer, setCustomer] = useState<CustomerForm>({
         name: "",
         phone: "",
@@ -357,6 +366,9 @@ export default function CheckoutPage() {
         };
     }, [customer.phone]);
 
+    const customerFormLoading = loadingCustomer;
+    const addressFormLoading = loadingCep || loadingAddressSearch || loadingLocation;
+
     const cashValue = useMemo(() => parseCurrency(cashReceived), [cashReceived]);
 
     const change = useMemo(() => {
@@ -387,17 +399,103 @@ export default function CheckoutPage() {
         return digits.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
     }
 
+    function handleAddressSheetOpenChange(open: boolean) {
+        setAddressSheetOpen(open);
+
+        if (open) {
+            return;
+        }
+
+        if (fulfillmentType === "DELIVERY" && !hasAddress()) {
+            setFulfillmentType(null);
+
+            toast.info("Informe como quer receber seu pedido");
+        }
+    }
+
     function updateCustomer(field: keyof CustomerForm, value: string) {
+        setCustomerIdentified(false);
+
         setCustomer((current) => ({
             ...current,
             [field]: value,
         }));
     }
 
-    function updateAddress(field: keyof AddressForm, value: string) {
-        setSelectedAddressId(null);
+    function openDelivery() {
+        if (!customerIdentified) {
+            setCustomerSheetOpen(true);
+            return;
+        }
 
-        setAddress((current) => ({
+        setFulfillmentType("DELIVERY");
+
+        if (savedAddresses.length > 0) {
+            setAddressSheetMode("select");
+        } else {
+            startNewAddress();
+        }
+
+        setAddressSheetOpen(true);
+    }
+
+    function selectPickup() {
+        setFulfillmentType("PICKUP");
+    }
+
+    function selectSavedAddress(savedAddress: SavedAddress) {
+        const selectedAddress: AddressForm = {
+            street: savedAddress.street,
+            number: savedAddress.number,
+            complement: savedAddress.complement ?? "",
+            neighborhood: savedAddress.neighborhood,
+            city: savedAddress.city,
+            state: savedAddress.state,
+            zipCode: savedAddress.zipCode,
+            reference: savedAddress.reference ?? "",
+        };
+
+        setAddress(selectedAddress);
+        setAddressDraft(selectedAddress);
+
+        setSelectedAddressId(savedAddress.id);
+        setSelectedAddressDraftId(savedAddress.id);
+
+        setFulfillmentType("DELIVERY");
+        setAddressSheetOpen(false);
+    }
+
+    function startNewAddress() {
+        setAddressDraft(initialAddress);
+        setSelectedAddressDraftId(null);
+
+        setAddressSearch("");
+        setAddressSearchResults([]);
+        setAddressSearchError("");
+        setCepError("");
+        setLocationError("");
+
+        setAddressSheetMode("form");
+    }
+
+    function editDeliveryAddress() {
+        if (!customerIdentified) {
+            setCustomerSheetOpen(true);
+            return;
+        }
+
+        setAddressDraft(address);
+        setSelectedAddressDraftId(selectedAddressId);
+
+        setAddressSheetMode(savedAddresses.length > 0 ? "select" : "form");
+
+        setAddressSheetOpen(true);
+    }
+
+    function updateAddressDraft(field: keyof AddressForm, value: string) {
+        setSelectedAddressDraftId(null);
+
+        setAddressDraft((current) => ({
             ...current,
             [field]: value,
         }));
@@ -406,7 +504,7 @@ export default function CheckoutPage() {
     function selectAddressSearchResult(result: AddressSearchResult) {
         setSelectedAddressId(null);
 
-        setAddress((current) => ({
+        setAddressDraft((current) => ({
             ...current,
             zipCode: result.cep.replace(/\D/g, ""),
             street: result.logradouro,
@@ -418,6 +516,52 @@ export default function CheckoutPage() {
         setAddressSearch(result.logradouro);
         setAddressSearchResults([]);
         setAddressSearchError("");
+    }
+
+    function confirmCustomer() {
+        const normalizedPhone = customer.phone.replace(/\D/g, "");
+
+        if (normalizedPhone.length < 10) {
+            return;
+        }
+
+        if (customer.name.trim().length < 2) {
+            return;
+        }
+
+        setCustomerIdentified(true);
+        setCustomerSheetOpen(false);
+    }
+
+    function confirmAddress() {
+        if (!addressDraft.street.trim()) {
+            return;
+        }
+
+        if (!addressDraft.number.trim()) {
+            return;
+        }
+
+        if (!addressDraft.neighborhood.trim()) {
+            return;
+        }
+
+        if (!addressDraft.city.trim()) {
+            return;
+        }
+
+        if (addressDraft.state.trim().length !== 2) {
+            return;
+        }
+
+        if (addressDraft.zipCode.replace(/\D/g, "").length !== 8) {
+            return;
+        }
+
+        setAddress(addressDraft);
+        setSelectedAddressId(selectedAddressDraftId);
+
+        setAddressSheetOpen(false);
     }
 
     async function useCurrentLocation() {
@@ -453,7 +597,7 @@ export default function CheckoutPage() {
 
             setSelectedAddressId(null);
 
-            setAddress((current) => ({
+            setAddressDraft((current) => ({
                 ...current,
                 street: data.street ?? "",
                 number: data.number ?? "",
@@ -494,8 +638,8 @@ export default function CheckoutPage() {
 
     async function searchAddress() {
         const street = addressSearch.trim();
-        const city = address.city.trim();
-        const state = address.state.trim().toUpperCase();
+        const city = addressDraft.city.trim();
+        const state = addressDraft.state.trim().toUpperCase();
 
         if (state.length !== 2) {
             setAddressSearchError("Informe a UF antes de pesquisar.");
@@ -568,7 +712,7 @@ export default function CheckoutPage() {
                 throw new Error("CEP não encontrado.");
             }
 
-            setAddress((current) => ({
+            setAddressDraft((current) => ({
                 ...current,
                 zipCode: normalizedZipCode,
                 street: data.logradouro ?? "",
@@ -625,6 +769,11 @@ export default function CheckoutPage() {
 
         if (normalizedPhone.length < 10) {
             setError("Informe um telefone válido.");
+            return;
+        }
+
+        if (!fulfillmentType) {
+            setError("Escolha entre entrega ou retirada.");
             return;
         }
 
@@ -831,24 +980,40 @@ export default function CheckoutPage() {
                         </SheetHeader>
 
                         <div className="space-y-3 px-4 pb-6">
-                            <input
-                                value={customer.phone}
-                                onChange={(event) => {
-                                    const formattedPhone = formatPhone(event.target.value);
+                            <fieldset
+                                disabled={customerFormLoading}
+                                className="space-y-3 disabled:opacity-60"
+                            >
+                                <input
+                                    value={customer.phone}
+                                    onChange={(event) => {
+                                        const formattedPhone = formatPhone(event.target.value);
 
-                                    updateCustomer("phone", formattedPhone);
+                                        updateCustomer("phone", formattedPhone);
 
-                                    if (formattedPhone.replace(/\D/g, "").length < 10) {
-                                        setCustomerFound(false);
+                                        setCustomerIdentified(false);
+                                        setFulfillmentType(null);
+
+                                        setAddress(initialAddress);
+                                        setAddressDraft(initialAddress);
+
+                                        setSelectedAddressId(null);
+                                        setSelectedAddressDraftId(null);
+
                                         setSavedAddresses([]);
-                                        lastSearchedPhone.current = "";
-                                    }
-                                }}
-                                placeholder="Telefone"
-                                inputMode="tel"
-                                maxLength={15}
-                                className="w-full rounded-lg border p-3"
-                            />
+
+                                        if (formattedPhone.replace(/\D/g, "").length < 10) {
+                                            setCustomerFound(false);
+                                            setSavedAddresses([]);
+                                            lastSearchedPhone.current = "";
+                                        }
+                                    }}
+                                    placeholder="Telefone"
+                                    inputMode="tel"
+                                    maxLength={15}
+                                    className="w-full rounded-lg border p-3"
+                                />
+                            </fieldset>
 
                             {loadingCustomer && (
                                 <p className="text-muted-foreground text-sm">
@@ -862,25 +1027,34 @@ export default function CheckoutPage() {
                                     automaticamente.
                                 </p>
                             )}
-
-                            <input
-                                value={customer.name}
-                                onChange={(event) => updateCustomer("name", event.target.value)}
-                                placeholder="Nome"
-                                className="w-full rounded-lg border p-3"
-                            />
-
-                            <input
-                                value={customer.email}
-                                onChange={(event) => updateCustomer("email", event.target.value)}
-                                placeholder="E-mail"
-                                inputMode="email"
-                                className="w-full rounded-lg border p-3"
-                            />
-
+                            <fieldset
+                                disabled={customerFormLoading}
+                                className="space-y-3 disabled:opacity-60"
+                            >
+                                <input
+                                    value={customer.name}
+                                    onChange={(event) => updateCustomer("name", event.target.value)}
+                                    placeholder="Nome"
+                                    className="w-full rounded-lg border p-3"
+                                />
+                            </fieldset>
+                            <fieldset
+                                disabled={customerFormLoading}
+                                className="space-y-3 disabled:opacity-60"
+                            >
+                                <input
+                                    value={customer.email}
+                                    onChange={(event) =>
+                                        updateCustomer("email", event.target.value)
+                                    }
+                                    placeholder="E-mail"
+                                    inputMode="email"
+                                    className="w-full rounded-lg border p-3"
+                                />
+                            </fieldset>
                             <button
                                 type="button"
-                                onClick={() => setCustomerSheetOpen(false)}
+                                onClick={confirmCustomer}
                                 className="w-full rounded-lg border p-3 font-medium"
                             >
                                 Confirmar
@@ -901,23 +1075,47 @@ export default function CheckoutPage() {
                 <div className="grid grid-cols-2 gap-3">
                     <button
                         type="button"
-                        onClick={() => setFulfillmentType("DELIVERY")}
+                        onClick={openDelivery}
                         className={`rounded-xl border p-4 text-left transition ${
                             fulfillmentType === "DELIVERY"
                                 ? "border-primary bg-primary/5"
                                 : "hover:bg-muted"
                         }`}
                     >
-                        <div className="font-semibold">Entrega</div>
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <div className="font-semibold">Entrega</div>
 
-                        <div className="text-muted-foreground mt-1 text-sm">
-                            Receber no meu endereço
+                                {fulfillmentType === "DELIVERY" && hasAddress() ? (
+                                    <div className="mt-2">
+                                        <p className="text-sm font-medium">
+                                            {address.street}, {address.number}
+                                        </p>
+
+                                        <p className="text-muted-foreground text-sm">
+                                            {address.neighborhood} — {address.city}/{address.state}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="text-muted-foreground mt-1 text-sm">
+                                        Receber no meu endereço
+                                    </div>
+                                )}
+                            </div>
+
+                            {fulfillmentType === "DELIVERY" && hasAddress() && (
+                                <span
+                                    className="text-primary text-sm font-medium"
+                                    onClick={editDeliveryAddress}
+                                >
+                                    Editar
+                                </span>
+                            )}
                         </div>
                     </button>
-
                     <button
                         type="button"
-                        onClick={() => setFulfillmentType("PICKUP")}
+                        onClick={selectPickup}
                         className={`rounded-xl border p-4 text-left transition ${
                             fulfillmentType === "PICKUP"
                                 ? "border-primary bg-primary/5"
@@ -933,246 +1131,324 @@ export default function CheckoutPage() {
 
             {fulfillmentType === "DELIVERY" && (
                 <section className="space-y-3">
-                    <h2 className="text-lg font-semibold">Endereço de entrega</h2>
-
-                    <Sheet open={addressSheetOpen} onOpenChange={setAddressSheetOpen}>
-                        <SheetTrigger asChild>
-                            <button
-                                type="button"
-                                className="w-full rounded-xl border p-4 text-left"
-                            >
-                                {hasAddress() ? (
-                                    <div className="space-y-1">
-                                        <p className="font-medium">
-                                            {address.street}
-                                            {address.number ? `, ${address.number}` : ""}
-                                        </p>
-
-                                        <p className="text-muted-foreground text-sm">
-                                            {address.neighborhood}
-                                            {address.neighborhood && address.city ? " — " : ""}
-                                            {address.city}
-                                            {address.state ? `/${address.state}` : ""}
-                                        </p>
-
-                                        {address.zipCode && (
-                                            <p className="text-muted-foreground text-sm">
-                                                CEP {address.zipCode}
-                                            </p>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div>
-                                        <p className="font-medium">Adicionar endereço</p>
-
-                                        <p className="text-muted-foreground text-sm">
-                                            Escolha onde receber seu pedido
-                                        </p>
-                                    </div>
-                                )}
-                            </button>
-                        </SheetTrigger>
-
+                    <Sheet open={addressSheetOpen} onOpenChange={handleAddressSheetOpenChange}>
                         <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto">
                             <SheetHeader>
-                                <SheetTitle>Endereço de entrega</SheetTitle>
+                                <SheetTitle>
+                                    {addressSheetMode === "select"
+                                        ? "Onde entregar?"
+                                        : "Adicionar endereço"}
+                                </SheetTitle>
 
                                 <SheetDescription>
-                                    Escolha um endereço salvo ou informe um novo endereço.
+                                    {addressSheetMode === "select"
+                                        ? "Escolha um endereço salvo ou informe um novo."
+                                        : "Informe o endereço para receber seu pedido."}
                                 </SheetDescription>
                             </SheetHeader>
 
                             <div className="space-y-4 px-4 pb-6">
-                                <button
-                                    type="button"
-                                    onClick={useCurrentLocation}
-                                    disabled={loadingLocation}
-                                    className="w-full rounded-lg border p-3 font-medium"
-                                >
-                                    {loadingLocation
-                                        ? "Obtendo localização..."
-                                        : "Usar minha localização"}
-                                </button>
-
-                                {locationError && (
-                                    <p className="text-destructive text-sm">{locationError}</p>
-                                )}
-
-                                <div className="space-y-3">
-                                    <div>
-                                        <input
-                                            value={address.zipCode}
-                                            onChange={(event) => {
-                                                const value = event.target.value
-                                                    .replace(/\D/g, "")
-                                                    .slice(0, 8);
-
-                                                updateAddress("zipCode", value);
-
-                                                if (value.length === 8) {
-                                                    searchCep(value);
-                                                }
-                                            }}
-                                            placeholder="CEP"
-                                            inputMode="numeric"
-                                            maxLength={8}
-                                            className="w-full rounded-lg border p-3"
-                                        />
-
-                                        {loadingCep && (
-                                            <p className="text-muted-foreground mt-2 text-sm">
-                                                Buscando endereço...
-                                            </p>
-                                        )}
-
-                                        {cepError && (
-                                            <p className="text-destructive mt-2 text-sm">
-                                                {cepError}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <input
-                                        value={address.street}
-                                        onChange={(event) =>
-                                            updateAddress("street", event.target.value)
-                                        }
-                                        placeholder="Rua"
-                                        className="w-full rounded-lg border p-3"
-                                    />
-
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <input
-                                            value={address.number}
-                                            onChange={(event) =>
-                                                updateAddress("number", event.target.value)
-                                            }
-                                            placeholder="Número"
-                                            className="w-full rounded-lg border p-3"
-                                        />
-
-                                        <input
-                                            value={address.complement}
-                                            onChange={(event) =>
-                                                updateAddress("complement", event.target.value)
-                                            }
-                                            placeholder="Complemento"
-                                            className="col-span-2 w-full rounded-lg border p-3"
-                                        />
-                                    </div>
-
-                                    <input
-                                        value={address.neighborhood}
-                                        onChange={(event) =>
-                                            updateAddress("neighborhood", event.target.value)
-                                        }
-                                        placeholder="Bairro"
-                                        className="w-full rounded-lg border p-3"
-                                    />
-
-                                    <div className="grid grid-cols-4 gap-3">
-                                        <input
-                                            value={address.city}
-                                            onChange={(event) =>
-                                                updateAddress("city", event.target.value)
-                                            }
-                                            placeholder="Cidade"
-                                            className="col-span-3 w-full rounded-lg border p-3"
-                                        />
-
-                                        <input
-                                            value={address.state}
-                                            onChange={(event) =>
-                                                updateAddress(
-                                                    "state",
-                                                    event.target.value.toUpperCase().slice(0, 2)
-                                                )
-                                            }
-                                            placeholder="UF"
-                                            maxLength={2}
-                                            className="w-full rounded-lg border p-3 uppercase"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium">
-                                            Não sabe o CEP?
-                                        </label>
-
-                                        <div className="flex gap-2">
-                                            <input
-                                                value={addressSearch}
-                                                onChange={(event) => {
-                                                    setAddressSearch(event.target.value);
-                                                    setAddressSearchError("");
-                                                }}
-                                                placeholder="Digite o nome da rua"
-                                                className="w-full rounded-lg border p-3"
-                                            />
-
+                                {addressSheetMode === "select" ? (
+                                    <div className="space-y-3">
+                                        {savedAddresses.map((savedAddress) => (
                                             <button
+                                                key={savedAddress.id}
                                                 type="button"
-                                                onClick={searchAddress}
-                                                disabled={loadingAddressSearch}
-                                                className="rounded-lg border px-4"
+                                                onClick={() => selectSavedAddress(savedAddress)}
+                                                className={`w-full rounded-xl border p-4 text-left transition ${
+                                                    selectedAddressId === savedAddress.id
+                                                        ? "border-primary bg-primary/5"
+                                                        : "hover:bg-muted"
+                                                }`}
                                             >
-                                                {loadingAddressSearch ? "Buscando..." : "Buscar"}
+                                                <p className="font-medium">
+                                                    {savedAddress.label ?? "Endereço"}
+                                                </p>
+
+                                                <p className="text-muted-foreground mt-1 text-sm">
+                                                    {savedAddress.street}, {savedAddress.number}
+                                                </p>
+
+                                                <p className="text-muted-foreground text-sm">
+                                                    {savedAddress.neighborhood} —{" "}
+                                                    {savedAddress.city}/{savedAddress.state}
+                                                </p>
                                             </button>
+                                        ))}
+
+                                        <button
+                                            type="button"
+                                            onClick={startNewAddress}
+                                            className="w-full rounded-xl border p-4 font-medium"
+                                        >
+                                            Informar novo endereço
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={useCurrentLocation}
+                                            disabled={loadingLocation}
+                                            className="w-full rounded-lg border p-3 font-medium"
+                                        >
+                                            {loadingLocation
+                                                ? "Obtendo localização..."
+                                                : "Usar minha localização"}
+                                        </button>
+
+                                        {locationError && (
+                                            <p className="text-destructive text-sm">
+                                                {locationError}
+                                            </p>
+                                        )}
+
+                                        <div className="space-y-3">
+                                            <div>
+                                                <fieldset
+                                                    disabled={addressFormLoading}
+                                                    className="space-y-3 disabled:opacity-60"
+                                                >
+                                                    <input
+                                                        value={address.zipCode}
+                                                        onChange={(event) => {
+                                                            const value = event.target.value
+                                                                .replace(/\D/g, "")
+                                                                .slice(0, 8);
+
+                                                            updateAddressDraft("zipCode", value);
+
+                                                            if (value.length === 8) {
+                                                                searchCep(value);
+                                                            }
+                                                        }}
+                                                        placeholder="CEP"
+                                                        inputMode="numeric"
+                                                        maxLength={8}
+                                                        className="w-full rounded-lg border p-3"
+                                                    />
+                                                </fieldset>
+                                                {loadingCep && (
+                                                    <p className="text-muted-foreground mt-2 text-sm">
+                                                        Buscando endereço...
+                                                    </p>
+                                                )}
+
+                                                {cepError && (
+                                                    <p className="text-destructive mt-2 text-sm">
+                                                        {cepError}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <div className="grid grid-cols-[1fr_120px] gap-3">
+                                                <fieldset
+                                                    disabled={addressFormLoading}
+                                                    className="w-full disabled:opacity-60"
+                                                >
+                                                    <input
+                                                        value={address.street}
+                                                        onChange={(event) =>
+                                                            updateAddressDraft(
+                                                                "street",
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        placeholder="Rua"
+                                                        className="w-full rounded-lg border p-3"
+                                                    />
+                                                </fieldset>
+                                                <fieldset
+                                                    disabled={addressFormLoading}
+                                                    className="w-full disabled:opacity-60"
+                                                >
+                                                    <input
+                                                        value={address.number}
+                                                        onChange={(event) =>
+                                                            updateAddressDraft(
+                                                                "number",
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        placeholder="Número"
+                                                        className="w-full rounded-lg border p-3"
+                                                    />
+                                                </fieldset>
+                                            </div>
+
+                                            <fieldset
+                                                disabled={addressFormLoading}
+                                                className="w-full disabled:opacity-60"
+                                            >
+                                                <input
+                                                    value={address.complement}
+                                                    onChange={(event) =>
+                                                        updateAddressDraft(
+                                                            "complement",
+                                                            event.target.value
+                                                        )
+                                                    }
+                                                    placeholder="Complemento"
+                                                    className="w-full rounded-lg border p-3"
+                                                />
+                                            </fieldset>
+
+                                            <fieldset
+                                                disabled={addressFormLoading}
+                                                className="space-y-3 disabled:opacity-60"
+                                            >
+                                                <input
+                                                    value={address.neighborhood}
+                                                    onChange={(event) =>
+                                                        updateAddressDraft(
+                                                            "neighborhood",
+                                                            event.target.value
+                                                        )
+                                                    }
+                                                    placeholder="Bairro"
+                                                    className="w-full rounded-lg border p-3"
+                                                />
+                                            </fieldset>
+
+                                            <div className="grid grid-cols-[1fr_120px] gap-3">
+                                                <fieldset
+                                                    disabled={addressFormLoading}
+                                                    className="w-full disabled:opacity-60"
+                                                >
+                                                    <input
+                                                        value={address.city}
+                                                        onChange={(event) =>
+                                                            updateAddressDraft(
+                                                                "city",
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        placeholder="Cidade"
+                                                        className="col-span-3 w-full rounded-lg border p-3"
+                                                    />
+                                                </fieldset>
+                                                <fieldset
+                                                    disabled={addressFormLoading}
+                                                    className="w-full disabled:opacity-60"
+                                                >
+                                                    <input
+                                                        value={address.state}
+                                                        onChange={(event) =>
+                                                            updateAddressDraft(
+                                                                "state",
+                                                                event.target.value
+                                                                    .toUpperCase()
+                                                                    .slice(0, 2)
+                                                            )
+                                                        }
+                                                        placeholder="UF"
+                                                        maxLength={2}
+                                                        className="w-full rounded-lg border p-3 uppercase"
+                                                    />
+                                                </fieldset>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium">
+                                                    Não sabe o CEP?
+                                                </label>
+
+                                                <div className="flex gap-2">
+                                                    <fieldset
+                                                        disabled={addressFormLoading}
+                                                        className="w-full space-y-3 disabled:opacity-60"
+                                                    >
+                                                        <input
+                                                            value={addressSearch}
+                                                            onChange={(event) => {
+                                                                setAddressSearch(
+                                                                    event.target.value
+                                                                );
+                                                                setAddressSearchError("");
+                                                            }}
+                                                            placeholder="Digite o nome da rua"
+                                                            className="w-full rounded-lg border p-3"
+                                                        />
+                                                    </fieldset>
+                                                    <button
+                                                        type="button"
+                                                        onClick={searchAddress}
+                                                        disabled={loadingAddressSearch}
+                                                        className="rounded-lg border px-4"
+                                                    >
+                                                        {loadingAddressSearch
+                                                            ? "Buscando..."
+                                                            : "Buscar"}
+                                                    </button>
+                                                </div>
+
+                                                {addressSearchError && (
+                                                    <p className="text-destructive text-sm">
+                                                        {addressSearchError}
+                                                    </p>
+                                                )}
+
+                                                {addressSearchResults.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {addressSearchResults.map((result) => (
+                                                            <button
+                                                                key={`${result.cep}-${result.logradouro}`}
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    selectAddressSearchResult(
+                                                                        result
+                                                                    )
+                                                                }
+                                                                className="w-full rounded-lg border p-3 text-left"
+                                                            >
+                                                                <div className="font-medium">
+                                                                    {result.logradouro}
+                                                                </div>
+
+                                                                <div className="text-muted-foreground text-sm">
+                                                                    {result.bairro}
+                                                                    {result.bairro ? " — " : ""}
+                                                                    {result.localidade}/{result.uf}
+                                                                </div>
+
+                                                                <div className="text-muted-foreground text-sm">
+                                                                    CEP {result.cep}
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <fieldset
+                                                disabled={addressFormLoading}
+                                                className="space-y-3 disabled:opacity-60"
+                                            >
+                                                <input
+                                                    value={address.reference}
+                                                    onChange={(event) =>
+                                                        updateAddressDraft(
+                                                            "reference",
+                                                            event.target.value
+                                                        )
+                                                    }
+                                                    placeholder="Ponto de referência (opcional)"
+                                                    className="w-full rounded-lg border p-3"
+                                                />
+                                            </fieldset>
                                         </div>
 
-                                        {addressSearchError && (
-                                            <p className="text-destructive text-sm">
-                                                {addressSearchError}
-                                            </p>
-                                        )}
-
-                                        {addressSearchResults.length > 0 && (
-                                            <div className="space-y-2">
-                                                {addressSearchResults.map((result) => (
-                                                    <button
-                                                        key={`${result.cep}-${result.logradouro}`}
-                                                        type="button"
-                                                        onClick={() =>
-                                                            selectAddressSearchResult(result)
-                                                        }
-                                                        className="w-full rounded-lg border p-3 text-left"
-                                                    >
-                                                        <div className="font-medium">
-                                                            {result.logradouro}
-                                                        </div>
-
-                                                        <div className="text-muted-foreground text-sm">
-                                                            {result.bairro}
-                                                            {result.bairro ? " — " : ""}
-                                                            {result.localidade}/{result.uf}
-                                                        </div>
-
-                                                        <div className="text-muted-foreground text-sm">
-                                                            CEP {result.cep}
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <input
-                                        value={address.reference}
-                                        onChange={(event) =>
-                                            updateAddress("reference", event.target.value)
-                                        }
-                                        placeholder="Ponto de referência (opcional)"
-                                        className="w-full rounded-lg border p-3"
-                                    />
-                                </div>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setAddressSheetOpen(false)}
-                                    className="w-full rounded-lg border p-3 font-medium"
-                                >
-                                    Confirmar endereço
-                                </button>
+                                        <button
+                                            type="button"
+                                            onClick={confirmAddress}
+                                            disabled={addressFormLoading}
+                                            className="w-full rounded-lg border p-3 font-medium"
+                                        >
+                                            {addressFormLoading
+                                                ? "Aguarde..."
+                                                : "Confirmar endereço"}
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </SheetContent>
                     </Sheet>
