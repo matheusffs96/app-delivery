@@ -34,6 +34,13 @@ type Redemption = {
     alreadyRedeemed: boolean;
 };
 
+type CustomerErrors = {
+    name?: string;
+    phone?: string;
+};
+
+type AddressErrors = Partial<Record<"zipCode" | "street" | "number" | "neighborhood", string>>;
+
 type Props = {
     promotion: Promotion;
 };
@@ -46,10 +53,13 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
 
-    const [address, setAddress] = useState<AddressForm>(initialAddress);
+    const [address, setAddress] = useState<AddressForm>({
+        ...initialAddress,
+        city: "Dracena",
+        state: "SP",
+    });
     const [addressResolvedByCep, setAddressResolvedByCep] = useState(false);
 
-    const [streetSearch, setStreetSearch] = useState("");
     const [streetResults, setStreetResults] = useState<AddressSearchResult[]>([]);
 
     const [loadingCep, setLoadingCep] = useState(false);
@@ -60,6 +70,8 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     const [redemption, setRedemption] = useState<Redemption | null>(null);
 
     const [checkingRedemption, setCheckingRedemption] = useState(false);
+    const [customerErrors, setCustomerErrors] = useState<CustomerErrors>({});
+    const [addressErrors, setAddressErrors] = useState<AddressErrors>({});
 
     const stepIndex = {
         presentation: 0,
@@ -82,15 +94,27 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     async function continueCustomer() {
         setError("");
 
-        if (name.trim().length < 2) {
-            setError("Informe seu nome.");
-            return;
-        }
-
+        const errors: CustomerErrors = {};
         const normalizedPhone = phone.replace(/\D/g, "");
 
+        if (name.trim().length < 2) {
+            errors.name = "Informe seu nome.";
+        }
+
         if (normalizedPhone.length !== 10 && normalizedPhone.length !== 11) {
-            setError("Informe um telefone válido.");
+            errors.phone = "Informe um telefone válido.";
+        }
+
+        setCustomerErrors(errors);
+
+        if (Object.keys(errors).length > 0) {
+            requestAnimationFrame(() => {
+                document.querySelector('[aria-invalid="true"]')?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                });
+            });
+
             return;
         }
 
@@ -132,6 +156,23 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
 
             const result = await findAddressByCep(address.zipCode);
 
+            const city = result.city?.trim().toLowerCase();
+            const state = result.state?.trim().toUpperCase();
+
+            if (city !== "dracena" || state !== "SP") {
+                setAddressResolvedByCep(false);
+
+                setAddress((current) => ({
+                    ...current,
+                    street: "",
+                    neighborhood: "",
+                    city: "Dracena",
+                    state: "SP",
+                }));
+
+                throw new Error("Esta promoção é válida apenas para endereços em Dracena/SP.");
+            }
+
             setAddress((current) => ({
                 ...current,
                 ...result,
@@ -153,9 +194,15 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
             setError("");
             setStreetResults([]);
 
-            const results = await findAddressesByStreet(address.state, address.city, streetSearch);
+            const results = await findAddressesByStreet("SP", "Dracena", address.street);
 
-            setStreetResults(results);
+            setStreetResults(
+                results.filter(
+                    (result) =>
+                        result.localidade.trim().toLowerCase() === "dracena" &&
+                        result.uf.trim().toUpperCase() === "SP"
+                )
+            );
         } catch (error) {
             setError(
                 error instanceof Error ? error.message : "Não foi possível pesquisar o endereço."
@@ -171,11 +218,10 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
             zipCode: result.cep.replace(/\D/g, ""),
             street: result.logradouro,
             neighborhood: result.bairro,
-            city: result.localidade,
-            state: result.uf,
+            city: "Dracena",
+            state: "SP",
         }));
 
-        setStreetSearch(result.logradouro);
         setStreetResults([]);
         setAddressResolvedByCep(true);
         setError("");
@@ -184,33 +230,34 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     async function redeem() {
         setError("");
 
+        const errors: AddressErrors = {};
+
+        if (address.zipCode.replace(/\D/g, "").length !== 8) {
+            errors.zipCode = "Informe um CEP válido.";
+        }
+
         if (!address.street.trim()) {
-            setError("Informe a rua.");
-            return;
+            errors.street = "Informe a rua.";
         }
 
         if (!address.number.trim()) {
-            setError("Informe o número.");
-            return;
+            errors.number = "Informe o número.";
         }
 
         if (!address.neighborhood.trim()) {
-            setError("Informe o bairro.");
-            return;
+            errors.neighborhood = "Informe o bairro.";
         }
 
-        if (address.city.trim().length < 2) {
-            setError("Informe a cidade.");
-            return;
-        }
+        setAddressErrors(errors);
 
-        if (address.state.trim().length !== 2) {
-            setError("Informe a UF.");
-            return;
-        }
+        if (Object.keys(errors).length > 0) {
+            requestAnimationFrame(() => {
+                document.querySelector('[aria-invalid="true"]')?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                });
+            });
 
-        if (address.zipCode.replace(/\D/g, "").length !== 8) {
-            setError("Informe um CEP válido.");
             return;
         }
 
@@ -362,26 +409,44 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                     </p>
 
                     <div className="mt-8 space-y-5">
-                        <Field label="Nome">
+                        <Field label="Nome" error={customerErrors.name}>
                             <input
                                 value={name}
-                                onChange={(event) => setName(event.target.value)}
+                                onChange={(event) => {
+                                    setName(event.target.value);
+
+                                    if (customerErrors.name) {
+                                        setCustomerErrors((current) => ({
+                                            ...current,
+                                            name: undefined,
+                                        }));
+                                    }
+                                }}
+                                aria-invalid={Boolean(customerErrors.name)}
                                 placeholder="Seu nome"
                                 className="bg-background focus:ring-ring h-12 w-full rounded-xl border px-4 outline-none focus:ring-2"
                             />
                         </Field>
 
-                        <Field label="Telefone">
+                        <Field label="Telefone" error={customerErrors.phone}>
                             <input
                                 value={phone}
-                                onChange={(event) => setPhone(formatPhone(event.target.value))}
+                                onChange={(event) => {
+                                    setPhone(formatPhone(event.target.value));
+
+                                    if (customerErrors.phone) {
+                                        setCustomerErrors((current) => ({
+                                            ...current,
+                                            phone: undefined,
+                                        }));
+                                    }
+                                }}
+                                aria-invalid={Boolean(customerErrors.phone)}
                                 inputMode="tel"
                                 placeholder="(18) 99999-9999"
                                 className="bg-background focus:ring-ring h-12 w-full rounded-xl border px-4 outline-none focus:ring-2"
                             />
                         </Field>
-
-                        {error && <p className="text-destructive text-sm">{error}</p>}
 
                         <button
                             type="button"
@@ -408,7 +473,7 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                         disabled={loadingCep || loadingStreet || submitting}
                         className="mt-6 space-y-4 disabled:opacity-60"
                     >
-                        <Field label="CEP">
+                        <Field label="CEP" error={addressErrors.zipCode}>
                             <div className="flex gap-2">
                                 <input
                                     value={formatCep(address.zipCode)}
@@ -431,46 +496,44 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                         </Field>
 
                         <div className="border-t pt-4">
-                            <p className="mb-3 text-sm font-medium">Ou pesquise pela rua</p>
+                            <p className="text-muted-foreground mb-3 text-center text-sm">ou</p>
 
-                            <div className="grid grid-cols-[80px_1fr] gap-2">
-                                <input
-                                    value={address.state}
-                                    onChange={(event) =>
-                                        updateAddress(
-                                            "state",
-                                            event.target.value.toUpperCase().slice(0, 2)
-                                        )
-                                    }
-                                    disabled={addressResolvedByCep}
-                                    placeholder="UF"
-                                    className="bg-background h-11 rounded-xl border px-3"
-                                />
+                            <Field label="Rua" error={addressErrors.street}>
+                                <div className="flex gap-2">
+                                    <input
+                                        value={address.street}
+                                        onChange={(event) => {
+                                            updateAddress("street", event.target.value);
 
-                                <input
-                                    value={address.city}
-                                    onChange={(event) => updateAddress("city", event.target.value)}
-                                    disabled={addressResolvedByCep}
-                                    placeholder="Cidade"
-                                    className="bg-background h-11 rounded-xl border px-3"
-                                />
-                            </div>
+                                            setStreetResults([]);
 
-                            <div className="mt-2 flex gap-2">
-                                <input
-                                    value={streetSearch}
-                                    onChange={(event) => setStreetSearch(event.target.value)}
-                                    placeholder="Nome da rua"
-                                    className="bg-background h-11 min-w-0 flex-1 rounded-xl border px-3"
-                                />
+                                            setAddressErrors((current) => ({
+                                                ...current,
+                                                street: undefined,
+                                            }));
+                                        }}
+                                        aria-invalid={Boolean(addressErrors.street)}
+                                        disabled={addressResolvedByCep}
+                                        placeholder="Nome da rua"
+                                        className="bg-background h-12 min-w-0 flex-1 rounded-xl border px-4"
+                                    />
 
-                                <button
-                                    type="button"
-                                    onClick={searchStreet}
-                                    className="rounded-xl border px-4"
-                                >
-                                    Buscar
-                                </button>
+                                    <button
+                                        type="button"
+                                        onClick={searchStreet}
+                                        disabled={addressResolvedByCep}
+                                        className="rounded-xl border px-4 font-medium disabled:opacity-50"
+                                    >
+                                        {loadingStreet ? "Buscando..." : "Buscar"}
+                                    </button>
+                                </div>
+                            </Field>
+
+                            <div className="bg-muted/50 mt-3 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm">
+                                <MapPin className="text-primary size-4 shrink-0" />
+                                <span>
+                                    Endereço em <strong>Dracena/SP</strong>
+                                </span>
                             </div>
 
                             {streetResults.length > 0 && (
@@ -483,8 +546,9 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                                             className="block w-full border-b p-3 text-left text-sm last:border-b-0"
                                         >
                                             <strong>{result.logradouro}</strong>
+
                                             <span className="text-muted-foreground block">
-                                                {result.bairro}, {result.localidade} - {result.uf}
+                                                {result.bairro} · CEP {formatCep(result.cep)}
                                             </span>
                                         </button>
                                     ))}
@@ -492,22 +556,19 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                             )}
                         </div>
 
-                        <Field label="Rua">
-                            <input
-                                value={address.street}
-                                onChange={(event) => updateAddress("street", event.target.value)}
-                                disabled={addressResolvedByCep}
-                                className="bg-background h-12 w-full rounded-xl border px-4"
-                            />
-                        </Field>
-
                         <div className="grid grid-cols-2 gap-3">
-                            <Field label="Número">
+                            <Field label="Número" error={addressErrors.number}>
                                 <input
                                     value={address.number}
-                                    onChange={(event) =>
-                                        updateAddress("number", event.target.value)
-                                    }
+                                    onChange={(event) => {
+                                        updateAddress("number", event.target.value);
+
+                                        setAddressErrors((current) => ({
+                                            ...current,
+                                            number: undefined,
+                                        }));
+                                    }}
+                                    aria-invalid={Boolean(addressErrors.number)}
                                     className="bg-background h-12 w-full rounded-xl border px-4"
                                 />
                             </Field>
@@ -523,7 +584,7 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                             </Field>
                         </div>
 
-                        <Field label="Bairro">
+                        <Field label="Bairro" error={addressErrors.neighborhood}>
                             <input
                                 value={address.neighborhood}
                                 onChange={(event) =>
@@ -625,11 +686,22 @@ function Benefit({ children }: { children: React.ReactNode }) {
     );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+    label,
+    error,
+    children,
+}: {
+    label: string;
+    error?: string;
+    children: React.ReactNode;
+}) {
     return (
         <label className="block">
             <span className="mb-1.5 block text-sm font-medium">{label}</span>
+
             {children}
+
+            {error && <span className="text-destructive mt-1.5 block text-sm">{error}</span>}
         </label>
     );
 }

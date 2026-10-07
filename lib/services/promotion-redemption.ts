@@ -71,6 +71,17 @@ export async function redeemPromotion(slug: string, input: PromotionRedemptionIn
             );
         }
 
+        if (promotion.slug === "lancamento") {
+            const city = input.address.city.trim().toLowerCase();
+            const state = input.address.state.trim().toUpperCase();
+
+            if (city !== "dracena" || state !== "SP") {
+                throw new PromotionRedemptionError(
+                    "Esta promoção é válida apenas para endereços em Dracena/SP."
+                );
+            }
+        }
+
         if (email) {
             const customerWithEmail = await tx.customer.findUnique({
                 where: {
