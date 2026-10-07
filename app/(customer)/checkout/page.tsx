@@ -88,6 +88,18 @@ type AddressSearchResult = {
 
 type AddressSheetMode = "select" | "form";
 
+type AppliedPromotion = {
+    code: string;
+    promotion: {
+        name: string;
+        freeDelivery: boolean;
+    };
+    subtotal: number;
+    discount: number;
+    deliveryFee: number;
+    total: number;
+};
+
 const initialAddress: AddressForm = {
     street: "",
     number: "",
@@ -162,6 +174,10 @@ export default function CheckoutPage() {
     const [selectedAddressDraftId, setSelectedAddressDraftId] = useState<string | null>(null);
 
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+    const [promotionCode, setPromotionCode] = useState("");
+    const [appliedPromotion, setAppliedPromotion] = useState<AppliedPromotion | null>(null);
+    const [applyingPromotion, setApplyingPromotion] = useState(false);
+    const [promotionError, setPromotionError] = useState("");
 
     const [cashReceived, setCashReceived] = useState("");
     const [loading, setLoading] = useState(items.length > 0);
@@ -173,6 +189,7 @@ export default function CheckoutPage() {
     const [loadingCep, setLoadingCep] = useState(false);
     const [cepError, setCepError] = useState("");
 
+    const [customerId, setCustomerId] = useState<string | null>(null);
     const [customerIdentified, setCustomerIdentified] = useState<boolean>(false);
     const [customer, setCustomer] = useState<CustomerForm>({
         name: "",
@@ -316,6 +333,14 @@ export default function CheckoutPage() {
             }
 
             if (!data.customer) {
+                if (customerId && appliedPromotion) {
+                    setAppliedPromotion(null);
+                    setPromotionError(
+                        "A promoção precisa ser aplicada novamente para este cliente."
+                    );
+                }
+
+                setCustomerId(null);
                 setCustomerFound(false);
                 setSavedAddresses([]);
 
@@ -327,6 +352,13 @@ export default function CheckoutPage() {
 
                 return;
             }
+
+            if (customerId && customerId !== data.customer.id && appliedPromotion) {
+                setAppliedPromotion(null);
+                setPromotionError("A promoção precisa ser aplicada novamente para este cliente.");
+            }
+
+            setCustomerId(data.customer.id);
             setCustomerFound(true);
             setSavedAddresses(data.customer.addresses);
 
@@ -370,14 +402,15 @@ export default function CheckoutPage() {
     const addressFormLoading = loadingCep || loadingAddressSearch || loadingLocation;
 
     const cashValue = useMemo(() => parseCurrency(cashReceived), [cashReceived]);
+    const checkoutTotal = appliedPromotion?.total ?? checkout?.subtotal ?? 0;
 
     const change = useMemo(() => {
         if (!checkout || paymentMethod !== "CASH") {
             return 0;
         }
 
-        return Math.max(cashValue - checkout.subtotal, 0);
-    }, [cashValue, checkout, paymentMethod]);
+        return Math.max(cashValue - checkoutTotal, 0);
+    }, [cashValue, checkout, checkoutTotal, paymentMethod]);
 
     function hasAddress() {
         return Boolean(
@@ -564,6 +597,89 @@ export default function CheckoutPage() {
         setAddressSheetOpen(false);
     }
 
+    function removePromotion() {
+        setAppliedPromotion(null);
+        setPromotionCode("");
+        setPromotionError("");
+    }
+
+    async function applyPromotion() {
+        const code = promotionCode.trim();
+        const phone = customer.phone.replace(/\D/g, "");
+
+        if (!code) {
+            setPromotionError("Informe o código promocional.");
+            return;
+        }
+
+        if (phone.length < 10) {
+            setPromotionError("Identifique o cliente antes de aplicar a promoção.");
+            return;
+        }
+
+        if (!paymentMethod) {
+            setPromotionError("Escolha a forma de pagamento antes de aplicar a promoção.");
+            return;
+        }
+
+        try {
+            setApplyingPromotion(true);
+            setPromotionError("");
+
+            const response = await fetch("/api/promotions/validate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    code,
+                    phone,
+                    paymentMethod,
+                    items: items.map((item) => {
+                        if (item.type === "PRODUCT") {
+                            return {
+                                type: "PRODUCT" as const,
+                                quantity: item.quantity,
+                                selection: item.selection,
+                            };
+                        }
+
+                        return {
+                            type: "COMBO" as const,
+                            productId: item.productId,
+                            quantity: item.quantity,
+                            comboSelections: item.comboSelections.map((selection) => ({
+                                comboItemId: selection.comboItemId,
+                                productId: selection.productId,
+                                instance: selection.instance,
+                                selection: selection.selection,
+                            })),
+                        };
+                    }),
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.valid) {
+                throw new Error(data.error ?? "Não foi possível aplicar a promoção.");
+            }
+
+            setAppliedPromotion(data);
+            setPromotionCode(data.code);
+
+            toast.success("Promoção aplicada.");
+        } catch (error) {
+            setAppliedPromotion(null);
+
+            setPromotionError(
+                error instanceof Error ? error.message : "Não foi possível aplicar a promoção."
+            );
+        } finally {
+            setApplyingPromotion(false);
+        }
+    }
+
     async function useCurrentLocation() {
         setLocationError("");
 
@@ -730,6 +846,13 @@ export default function CheckoutPage() {
     }
 
     function selectPaymentMethod(method: PaymentMethod) {
+        if (method !== paymentMethod && appliedPromotion) {
+            setAppliedPromotion(null);
+            setPromotionError(
+                "A promoção precisa ser aplicada novamente após alterar a forma de pagamento."
+            );
+        }
+
         setPaymentMethod(method);
         setError("");
 
@@ -825,9 +948,9 @@ export default function CheckoutPage() {
                 return;
             }
 
-            if (cashValue < checkout.subtotal) {
+            if (cashValue < checkoutTotal) {
                 setError(
-                    `O valor em dinheiro deve ser pelo menos ${formatCurrency(checkout.subtotal)}.`
+                    `O valor em dinheiro deve ser pelo menos ${formatCurrency(checkoutTotal)}.`
                 );
                 return;
             }
@@ -870,6 +993,8 @@ export default function CheckoutPage() {
             address: fulfillmentType === "DELIVERY" && !selectedAddressId ? address : undefined,
 
             paymentMethod,
+
+            promotionCode: appliedPromotion?.code,
 
             cashReceived: paymentMethod === "CASH" ? cashValue : undefined,
         };
@@ -1490,12 +1615,88 @@ export default function CheckoutPage() {
                             className="mt-2 w-full rounded-lg border p-3"
                         />
 
-                        {cashValue >= checkout.subtotal && (
+                        {cashValue >= checkoutTotal && (
                             <div className="mt-3 flex justify-between text-sm">
                                 <span>Troco</span>
 
                                 <strong>{formatCurrency(change)}</strong>
                             </div>
+                        )}
+                    </div>
+                )}
+            </section>
+
+            <section className="mt-8 space-y-3">
+                <div>
+                    <h2 className="text-lg font-semibold">Código promocional</h2>
+
+                    <p className="text-muted-foreground text-sm">
+                        Informe seu código para aplicar os benefícios da promoção.
+                    </p>
+                </div>
+
+                {appliedPromotion ? (
+                    <div className="rounded-xl border p-4">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="font-semibold">{appliedPromotion.promotion.name}</p>
+
+                                <p className="text-muted-foreground mt-1 text-sm">
+                                    Código {appliedPromotion.code}
+                                </p>
+
+                                <div className="mt-2 text-sm">
+                                    {appliedPromotion.discount > 0 && (
+                                        <p>
+                                            Desconto de{" "}
+                                            <strong>
+                                                {formatCurrency(appliedPromotion.discount)}
+                                            </strong>
+                                        </p>
+                                    )}
+
+                                    {appliedPromotion.promotion.freeDelivery && (
+                                        <p>Entrega grátis</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={removePromotion}
+                                className="text-sm font-medium"
+                            >
+                                Remover
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <div className="flex gap-2">
+                            <input
+                                value={promotionCode}
+                                onChange={(event) => {
+                                    setPromotionCode(event.target.value.toUpperCase());
+                                    setPromotionError("");
+                                }}
+                                placeholder="Código promocional"
+                                autoCapitalize="characters"
+                                disabled={applyingPromotion}
+                                className="w-full rounded-lg border p-3 uppercase disabled:opacity-60"
+                            />
+
+                            <button
+                                type="button"
+                                onClick={applyPromotion}
+                                disabled={applyingPromotion || !promotionCode.trim()}
+                                className="rounded-lg border px-4 font-medium disabled:opacity-50"
+                            >
+                                {applyingPromotion ? "Aplicando..." : "Aplicar"}
+                            </button>
+                        </div>
+
+                        {promotionError && (
+                            <p className="text-destructive text-sm">{promotionError}</p>
                         )}
                     </div>
                 )}
@@ -1521,11 +1722,43 @@ export default function CheckoutPage() {
                 ))}
             </section>
 
-            <section className="mt-8 rounded-xl border p-4">
+            {/* <section className="mt-8 rounded-xl border p-4">
                 <div className="flex items-center justify-between">
                     <span>Subtotal</span>
 
                     <strong className="text-lg">{formatCurrency(checkout.subtotal)}</strong>
+                </div>
+            </section> */}
+
+            <section className="mt-8 space-y-3 rounded-xl border p-4">
+                <div className="flex items-center justify-between">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(checkout.subtotal)}</span>
+                </div>
+
+                {appliedPromotion && appliedPromotion.discount > 0 && (
+                    <div className="flex items-center justify-between">
+                        <span>Desconto</span>
+                        <span>- {formatCurrency(appliedPromotion.discount)}</span>
+                    </div>
+                )}
+
+                {fulfillmentType === "DELIVERY" && (
+                    <div className="flex items-center justify-between">
+                        <span>Entrega</span>
+
+                        <span>
+                            {appliedPromotion?.promotion.freeDelivery
+                                ? "Grátis"
+                                : formatCurrency(appliedPromotion?.deliveryFee ?? 0)}
+                        </span>
+                    </div>
+                )}
+
+                <div className="flex items-center justify-between border-t pt-3">
+                    <strong>Total</strong>
+
+                    <strong className="text-lg">{formatCurrency(checkoutTotal)}</strong>
                 </div>
             </section>
 
@@ -1544,7 +1777,7 @@ export default function CheckoutPage() {
                 >
                     {submitting
                         ? "Enviando pedido..."
-                        : `Finalizar pedido — ${formatCurrency(checkout.subtotal)}`}
+                        : `Finalizar pedido — ${formatCurrency(checkoutTotal)}`}
                 </button>
             </div>
         </main>
