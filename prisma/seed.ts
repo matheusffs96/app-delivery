@@ -633,6 +633,58 @@ async function main() {
     });
 
     // ============================================================
+    // PROMOTIONS
+    // ============================================================
+
+    const launchPromotion = await prisma.promotion.upsert({
+        where: {
+            slug: "lancamento",
+        },
+        update: {
+            name: "Promoção de Lançamento",
+            description: "10% de desconto + entrega grátis.",
+            discountPercentage: "10",
+            discountFixed: null,
+            freeDelivery: true,
+            minOrderValue: null,
+            redemptionValidityDays: 30,
+            active: true,
+        },
+        create: {
+            slug: "lancamento",
+            name: "Promoção de Lançamento",
+            description: "10% de desconto + entrega grátis.",
+            discountPercentage: "10",
+            discountFixed: null,
+            freeDelivery: true,
+            minOrderValue: null,
+
+            // Ajustaremos estas datas para o lançamento real.
+            startsAt: new Date(),
+            endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+
+            redemptionValidityDays: 30,
+            active: true,
+        },
+    });
+
+    for (const method of ["PIX", "CASH"] as const) {
+        await prisma.promotionPaymentMethod.upsert({
+            where: {
+                promotionId_method: {
+                    promotionId: launchPromotion.id,
+                    method,
+                },
+            },
+            update: {},
+            create: {
+                promotionId: launchPromotion.id,
+                method,
+            },
+        });
+    }
+
+    // ============================================================
     // BUSINESS HOURS
     // ============================================================
 
