@@ -3,6 +3,7 @@ import { ProductSelection } from "@/lib/validators/product";
 import { Prisma } from "@/lib/generated/prisma/client";
 
 type ConfiguredItem = {
+    componentItemId: string;
     productId: string;
     productName: string;
     unitPrice: Prisma.Decimal;
@@ -197,6 +198,7 @@ export async function configureProduct(
             const price = decimal(component.additionalPrice);
 
             configuredComponents.push({
+                componentItemId: component.id,
                 productId: component.product.id,
                 productName: component.product.name,
                 unitPrice: price,

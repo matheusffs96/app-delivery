@@ -12,59 +12,57 @@ function formatCurrency(value: number) {
 }
 
 function ProductConfigurationDetails({ item }: { item: ProductCartItem }) {
+    const choices = [...item.configuration.options, ...item.configuration.components];
+
+    const groups = choices.reduce<Record<string, typeof choices>>((result, choice) => {
+        const groupName = choice.groupName ?? "Opções";
+
+        result[groupName] ??= [];
+        result[groupName].push(choice);
+
+        return result;
+    }, {});
+
     return (
-        <>
-            {item.configuration.options.length > 0 && (
-                <div className="text-muted-foreground mt-3 text-sm">
-                    {item.configuration.options.map((option) => (
-                        <div key={option.id}>
-                            {option.quantity > 1 && `${option.quantity}x `}
-                            {option.name}
+        <div className="mt-3 space-y-1 text-sm">
+            {Object.entries(groups).map(([groupName, choices]) => (
+                <div key={groupName}>
+                    <span className="font-medium">{groupName}: </span>
 
-                            {option.price > 0 && (
-                                <> (+ {formatCurrency(option.price * option.quantity)})</>
-                            )}
-                        </div>
-                    ))}
+                    <span className="text-muted-foreground">
+                        {choices
+                            .map((choice) =>
+                                choice.quantity > 1
+                                    ? `${choice.quantity}x ${choice.name}`
+                                    : choice.name
+                            )
+                            .join(", ")}
+                    </span>
                 </div>
-            )}
-
-            {item.configuration.components.length > 0 && (
-                <div className="text-muted-foreground mt-2 text-sm">
-                    {item.configuration.components.map((component) => (
-                        <div key={component.id}>
-                            {component.quantity > 1 && `${component.quantity}x `}
-                            {component.name}
-
-                            {component.price > 0 && (
-                                <> (+ {formatCurrency(component.price * component.quantity)})</>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
+            ))}
 
             {item.configuration.addons.length > 0 && (
-                <div className="text-muted-foreground mt-2 text-sm">
-                    {item.configuration.addons.map((addon) => (
-                        <div key={addon.id}>
-                            {addon.quantity > 1 && `${addon.quantity}x `}
-                            {addon.name}
+                <div>
+                    <span className="font-medium">Adicionais: </span>
 
-                            {addon.price > 0 && (
-                                <> (+ {formatCurrency(addon.price * addon.quantity)})</>
-                            )}
-                        </div>
-                    ))}
+                    <span className="text-muted-foreground">
+                        {item.configuration.addons
+                            .map((addon) =>
+                                addon.quantity > 1 ? `${addon.quantity}x ${addon.name}` : addon.name
+                            )
+                            .join(", ")}
+                    </span>
                 </div>
             )}
 
             {item.configuration.notes && (
-                <p className="text-muted-foreground mt-3 text-sm">
-                    Obs.: {item.configuration.notes}
-                </p>
+                <div>
+                    <span className="font-medium">Observação: </span>
+
+                    <span className="text-muted-foreground">{item.configuration.notes}</span>
+                </div>
             )}
-        </>
+        </div>
     );
 }
 

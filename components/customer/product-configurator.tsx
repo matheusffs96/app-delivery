@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+
 import { useCartStore } from "@/stores/cart-store";
 import type { ProductSelection } from "@/lib/validators/product";
 import type { ProductConfigurationResult, ProductDetail } from "@/types/product";
-
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 
 type Props = {
     product: ProductDetail;
@@ -23,32 +23,45 @@ type ConfigureProductResponse = {
     basePrice: number;
     additionalPrice: number;
     totalPrice: number;
+
     options: {
         id: string;
         name: string;
         price: number;
         quantity: number;
     }[];
+
     components: {
+        componentItemId: string;
         productId: string;
         productName: string;
         unitPrice: number;
         quantity: number;
     }[];
+
     componentOptions: {
         id: string;
         name: string;
         price: number;
         quantity: number;
     }[];
+
     addons: {
         id: string;
         name: string;
         price: number;
         quantity: number;
     }[];
+
     notes?: string;
 };
+
+type ComponentGroupSelection = {
+    items: string[];
+    options: string[];
+};
+
+type ComponentSelections = Record<string, ComponentGroupSelection>;
 
 function formatCurrency(value: number | string) {
     return new Intl.NumberFormat("pt-BR", {
@@ -75,8 +88,18 @@ function buildInitialOptions(product: ProductDetail, selection?: ProductSelectio
     return result;
 }
 
-function buildInitialComponentItems(product: ProductDetail, selection?: ProductSelection) {
-    const result: Record<string, string[]> = {};
+function buildInitialComponentSelections(
+    product: ProductDetail,
+    selection?: ProductSelection
+): ComponentSelections {
+    const result: ComponentSelections = {};
+
+    for (const group of product.componentGroups) {
+        result[group.id] = {
+            items: [],
+            options: [],
+        };
+    }
 
     for (const selectedItem of selection?.componentItems ?? []) {
         const group = product.componentGroups.find((item) =>
@@ -87,14 +110,16 @@ function buildInitialComponentItems(product: ProductDetail, selection?: ProductS
             continue;
         }
 
-        result[group.id] = [...(result[group.id] ?? []), selectedItem.componentItemId];
+        const current = result[group.id] ?? {
+            items: [],
+            options: [],
+        };
+
+        result[group.id] = {
+            ...current,
+            items: [...current.items, selectedItem.componentItemId],
+        };
     }
-
-    return result;
-}
-
-function buildInitialComponentOptions(product: ProductDetail, selection?: ProductSelection) {
-    const result: Record<string, string[]> = {};
 
     for (const selectedOption of selection?.componentOptions ?? []) {
         const group = product.componentGroups.find((item) =>
@@ -105,7 +130,15 @@ function buildInitialComponentOptions(product: ProductDetail, selection?: Produc
             continue;
         }
 
-        result[group.id] = [...(result[group.id] ?? []), selectedOption.componentOptionId];
+        const current = result[group.id] ?? {
+            items: [],
+            options: [],
+        };
+
+        result[group.id] = {
+            ...current,
+            options: [...current.options, selectedOption.componentOptionId],
+        };
     }
 
     return result;
@@ -128,18 +161,19 @@ export function ProductConfigurator({
     const router = useRouter();
 
     const addItem = useCartStore((state) => state.addItem);
+
     const [options, setOptions] = useState<Record<string, string[]>>(() =>
         buildInitialOptions(product, initialSelection)
     );
-    const [componentItems, setComponentItems] = useState<Record<string, string[]>>(() =>
-        buildInitialComponentItems(product, initialSelection)
+
+    const [componentSelections, setComponentSelections] = useState<ComponentSelections>(() =>
+        buildInitialComponentSelections(product, initialSelection)
     );
-    const [componentOptions, setComponentOptions] = useState<Record<string, string[]>>(() =>
-        buildInitialComponentOptions(product, initialSelection)
-    );
+
     const [addons, setAddons] = useState<Record<string, number>>(() =>
         buildInitialAddons(initialSelection)
     );
+
     const [notes, setNotes] = useState(initialSelection?.notes ?? "");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -172,7 +206,7 @@ export function ProductConfigurator({
     }, [options, product.optionGroups]);
 
     const selectedComponentTotal = useMemo(() => {
-        return Object.entries(componentItems).reduce((total, [groupId, selected]) => {
+        return Object.entries(componentSelections).reduce((total, [groupId, selection]) => {
             const group = product.componentGroups.find((item) => item.id === groupId);
 
             if (!group) {
@@ -181,17 +215,17 @@ export function ProductConfigurator({
 
             return (
                 total +
-                selected.reduce((groupTotal, componentItemId) => {
+                selection.items.reduce((groupTotal, componentItemId) => {
                     const item = group.items.find((component) => component.id === componentItemId);
 
                     return groupTotal + Number(item?.additionalPrice ?? 0);
                 }, 0)
             );
         }, 0);
-    }, [componentItems, product.componentGroups]);
+    }, [componentSelections, product.componentGroups]);
 
     const selectedComponentOptionTotal = useMemo(() => {
-        return Object.entries(componentOptions).reduce((total, [groupId, selected]) => {
+        return Object.entries(componentSelections).reduce((total, [groupId, selection]) => {
             const group = product.componentGroups.find((item) => item.id === groupId);
 
             if (!group) {
@@ -200,14 +234,14 @@ export function ProductConfigurator({
 
             return (
                 total +
-                selected.reduce((groupTotal, componentOptionId) => {
+                selection.options.reduce((groupTotal, componentOptionId) => {
                     const option = group.options.find((item) => item.id === componentOptionId);
 
                     return groupTotal + Number(option?.additionalPrice ?? 0);
                 }, 0)
             );
         }, 0);
-    }, [componentOptions, product.componentGroups]);
+    }, [componentSelections, product.componentGroups]);
 
     const totalPrice =
         Number(product.price) +
@@ -258,18 +292,23 @@ export function ProductConfigurator({
             return;
         }
 
-        setComponentItems((current) => {
-            const selectedItems = current[groupId] ?? [];
-            const selectedOptions = componentOptions[groupId] ?? [];
+        setComponentSelections((current) => {
+            const selection = current[groupId] ?? {
+                items: [],
+                options: [],
+            };
 
-            if (selectedItems.includes(componentItemId)) {
+            if (selection.items.includes(componentItemId)) {
                 return {
                     ...current,
-                    [groupId]: selectedItems.filter((id) => id !== componentItemId),
+                    [groupId]: {
+                        ...selection,
+                        items: selection.items.filter((id) => id !== componentItemId),
+                    },
                 };
             }
 
-            const currentCount = selectedItems.length + selectedOptions.length;
+            const currentCount = selection.items.length + selection.options.length;
 
             if (group.maxSelect !== null && currentCount >= group.maxSelect) {
                 return current;
@@ -277,7 +316,10 @@ export function ProductConfigurator({
 
             return {
                 ...current,
-                [groupId]: [...selectedItems, componentItemId],
+                [groupId]: {
+                    ...selection,
+                    items: [...selection.items, componentItemId],
+                },
             };
         });
     }
@@ -289,18 +331,23 @@ export function ProductConfigurator({
             return;
         }
 
-        setComponentOptions((current) => {
-            const selectedOptions = current[groupId] ?? [];
-            const selectedItems = componentItems[groupId] ?? [];
+        setComponentSelections((current) => {
+            const selection = current[groupId] ?? {
+                items: [],
+                options: [],
+            };
 
-            if (selectedOptions.includes(componentOptionId)) {
+            if (selection.options.includes(componentOptionId)) {
                 return {
                     ...current,
-                    [groupId]: selectedOptions.filter((id) => id !== componentOptionId),
+                    [groupId]: {
+                        ...selection,
+                        options: selection.options.filter((id) => id !== componentOptionId),
+                    },
                 };
             }
 
-            const currentCount = selectedItems.length + selectedOptions.length;
+            const currentCount = selection.items.length + selection.options.length;
 
             if (group.maxSelect !== null && currentCount >= group.maxSelect) {
                 return current;
@@ -308,7 +355,10 @@ export function ProductConfigurator({
 
             return {
                 ...current,
-                [groupId]: [...selectedOptions, componentOptionId],
+                [groupId]: {
+                    ...selection,
+                    options: [...selection.options, componentOptionId],
+                },
             };
         });
     }
@@ -317,7 +367,9 @@ export function ProductConfigurator({
         setAddons((current) => {
             if (quantity <= 0) {
                 const next = { ...current };
+
                 delete next[addonId];
+
                 return next;
             }
 
@@ -347,9 +399,12 @@ export function ProductConfigurator({
         }
 
         for (const group of product.componentGroups) {
-            const selectedItems = componentItems[group.id] ?? [];
-            const selectedOptions = componentOptions[group.id] ?? [];
-            const count = selectedItems.length + selectedOptions.length;
+            const selection = componentSelections[group.id] ?? {
+                items: [],
+                options: [],
+            };
+
+            const count = selection.items.length + selection.options.length;
 
             if (group.required && count === 0) {
                 return `O grupo "${group.name}" é obrigatório.`;
@@ -382,28 +437,33 @@ export function ProductConfigurator({
         try {
             const payload: ProductSelection = {
                 productId: product.id,
+
                 options: Object.values(options).flatMap((selected) =>
                     selected.map((optionId) => ({
                         optionId,
                         quantity: 1,
                     }))
                 ),
-                componentItems: Object.values(componentItems).flatMap((selected) =>
-                    selected.map((componentItemId) => ({
+
+                componentItems: Object.values(componentSelections).flatMap((selection) =>
+                    selection.items.map((componentItemId) => ({
                         componentItemId,
                         quantity: 1,
                     }))
                 ),
-                componentOptions: Object.values(componentOptions).flatMap((selected) =>
-                    selected.map((componentOptionId) => ({
+
+                componentOptions: Object.values(componentSelections).flatMap((selection) =>
+                    selection.options.map((componentOptionId) => ({
                         componentOptionId,
                         quantity: 1,
                     }))
                 ),
+
                 addons: Object.entries(addons).map(([addonId, quantity]) => ({
                     addonId,
                     quantity,
                 })),
+
                 notes: notes || undefined,
             };
 
@@ -425,28 +485,50 @@ export function ProductConfigurator({
 
             const result: ProductConfigurationResult = {
                 selection: payload,
+
                 configuration: {
-                    options: data.options.map((option) => ({
-                        id: option.id,
-                        name: option.name,
-                        price: option.price,
-                        quantity: option.quantity,
-                    })),
+                    options: data.options.map((option) => {
+                        const group = product.optionGroups.find((group) =>
+                            group.options.some((item) => item.id === option.id)
+                        );
 
-                    components: [
-                        ...data.components.map((component) => ({
-                            id: component.productId,
-                            name: component.productName,
-                            price: component.unitPrice,
-                            quantity: component.quantity,
-                        })),
-
-                        ...data.componentOptions.map((option) => ({
+                        return {
                             id: option.id,
+                            groupName: group?.name ?? "Opções",
                             name: option.name,
                             price: option.price,
                             quantity: option.quantity,
-                        })),
+                        };
+                    }),
+
+                    components: [
+                        ...data.components.map((component) => {
+                            const group = product.componentGroups.find((group) =>
+                                group.items.some((item) => item.id === component.componentItemId)
+                            );
+
+                            return {
+                                id: component.componentItemId,
+                                groupName: group?.name ?? "Opções",
+                                name: component.productName,
+                                price: component.unitPrice,
+                                quantity: component.quantity,
+                            };
+                        }),
+
+                        ...data.componentOptions.map((option) => {
+                            const group = product.componentGroups.find((group) =>
+                                group.options.some((item) => item.id === option.id)
+                            );
+
+                            return {
+                                id: option.id,
+                                groupName: group?.name ?? "Opções",
+                                name: option.name,
+                                price: option.price,
+                                quantity: option.quantity,
+                            };
+                        }),
                     ],
 
                     addons: data.addons.map((addon) => ({
@@ -549,7 +631,7 @@ export function ProductConfigurator({
 
                                             {Number(option.price) > 0 && (
                                                 <span className="text-sm">
-                                                    + R$ {Number(option.price).toFixed(2)}
+                                                    + {formatCurrency(option.price)}
                                                 </span>
                                             )}
                                         </div>
@@ -562,8 +644,13 @@ export function ProductConfigurator({
             })}
 
             {product.componentGroups.map((group) => {
-                const selectedItems = componentItems[group.id] ?? [];
-                const selectedOptions = componentOptions[group.id] ?? [];
+                const selection = componentSelections[group.id] ?? {
+                    items: [],
+                    options: [],
+                };
+
+                const selectedItems = selection.items;
+                const selectedOptions = selection.options;
 
                 return (
                     <section key={group.id} className="space-y-3">
@@ -599,7 +686,7 @@ export function ProductConfigurator({
 
                                             {Number(item.additionalPrice) > 0 && (
                                                 <span className="text-sm">
-                                                    + R$ {Number(item.additionalPrice).toFixed(2)}
+                                                    + {formatCurrency(item.additionalPrice)}
                                                 </span>
                                             )}
                                         </div>
@@ -626,7 +713,7 @@ export function ProductConfigurator({
 
                                             {Number(option.additionalPrice) > 0 && (
                                                 <span className="text-sm">
-                                                    + R$ {Number(option.additionalPrice).toFixed(2)}
+                                                    + {formatCurrency(option.additionalPrice)}
                                                 </span>
                                             )}
                                         </div>
@@ -654,7 +741,7 @@ export function ProductConfigurator({
                                     <div>{addon.name}</div>
 
                                     <div className="text-muted-foreground text-sm">
-                                        R$ {Number(addon.price).toFixed(2)}
+                                        {formatCurrency(addon.price)}
                                     </div>
                                 </div>
 
@@ -664,7 +751,7 @@ export function ProductConfigurator({
                                         onClick={() => updateAddon(addon.id, quantity - 1)}
                                         className="h-8 w-8 rounded border"
                                     >
-                                        -
+                                        −
                                     </button>
 
                                     <span className="min-w-5 text-center">{quantity}</span>
@@ -710,6 +797,7 @@ export function ProductConfigurator({
                 >
                     {submitText}
                 </button>
+
                 {mode === "selection" && onCancel && (
                     <button
                         type="button"

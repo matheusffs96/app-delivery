@@ -2,6 +2,7 @@ import type { ProductSelection } from "@/lib/validators/product";
 
 export type CartConfigurationOption = {
     id: string;
+    groupName: string;
     name: string;
     price: number;
     quantity: number;
@@ -9,6 +10,7 @@ export type CartConfigurationOption = {
 
 export type CartConfigurationComponent = {
     id: string;
+    groupName: string;
     name: string;
     price: number;
     quantity: number;

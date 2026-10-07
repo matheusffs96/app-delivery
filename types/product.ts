@@ -7,6 +7,7 @@ export type ProductConfigurationResult = {
     configuration: {
         options: {
             id: string;
+            groupName: string;
             name: string;
             price: number;
             quantity: number;
@@ -14,6 +15,7 @@ export type ProductConfigurationResult = {
 
         components: {
             id: string;
+            groupName: string;
             name: string;
             price: number;
             quantity: number;
