@@ -83,6 +83,23 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     function updateAddress(field: keyof AddressForm, value: string) {
         if (field === "zipCode") {
             setAddressResolvedByCep(false);
+            setStreetResults([]);
+
+            setAddressErrors((current) => ({
+                ...current,
+                zipCode: undefined,
+            }));
+
+            setAddress((current) => ({
+                ...current,
+                zipCode: value,
+                street: "",
+                neighborhood: "",
+                city: "Dracena",
+                state: "SP",
+            }));
+
+            return;
         }
 
         setAddress((current) => ({
