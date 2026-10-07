@@ -63,6 +63,8 @@ export const checkoutSchema = z
 
         paymentMethod: z.enum(["PIX", "CREDIT_CARD", "DEBIT_CARD", "CASH"]),
 
+        promotionCode: z.string().trim().optional(),
+
         cashReceived: z.number().positive().optional(),
     })
     .superRefine((data, ctx) => {

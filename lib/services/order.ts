@@ -2,6 +2,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { calculateCheckout } from "@/lib/services/checkout";
 import { findOrCreateCustomer } from "@/lib/services/customer";
+import { validatePromotionRedemption } from "@/lib/services/promotion";
 import type { CheckoutInput } from "@/lib/validators/checkout";
 
 type TransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
@@ -180,6 +181,10 @@ export async function createOrder(input: CheckoutInput) {
         throw new Error("A forma de pagamento selecionada não é aceita pela loja.");
     }
 
+    /*
+     * Todos os preços dos itens são recalculados no servidor.
+     * Não confiamos nos valores enviados pelo frontend.
+     */
     const calculated = await calculateCheckout({
         items: input.items,
     });
@@ -187,26 +192,57 @@ export async function createOrder(input: CheckoutInput) {
     const subtotal = calculated.subtotal;
 
     /*
-     * Taxa de entrega ainda é zero.
-     * Vamos evoluir a regra depois.
+     * Precisamos identificar o cliente antes de validar uma promoção,
+     * pois o resgate pertence a um Customer específico.
      */
-    const deliveryFee = new Prisma.Decimal(0);
-
-    const discount = new Prisma.Decimal(0);
-
-    const total = subtotal.add(deliveryFee).sub(discount);
-
-    if (input.paymentMethod === "CASH" && input.cashReceived !== undefined) {
-        const cashReceived = new Prisma.Decimal(input.cashReceived);
-
-        if (cashReceived.lt(total)) {
-            throw new Error("O valor em dinheiro é menor que o total do pedido.");
-        }
-    }
-
     const customer = await findOrCreateCustomer(input.customer);
 
     return prisma.$transaction(async (tx) => {
+        /*
+         * A taxa de entrega ainda é zero.
+         * Quando a regra real de frete for implementada, este será
+         * o valor-base antes da aplicação de entrega grátis.
+         */
+        let deliveryFee = new Prisma.Decimal(0);
+        let discount = new Prisma.Decimal(0);
+
+        let promotionRedemption: Awaited<ReturnType<typeof validatePromotionRedemption>> | null =
+            null;
+
+        /*
+         * A promoção é validada novamente no servidor no momento
+         * da criação do pedido. O frontend nunca é a autoridade
+         * para determinar desconto ou elegibilidade.
+         */
+        if (input.promotionCode) {
+            promotionRedemption = await validatePromotionRedemption(tx, {
+                code: input.promotionCode,
+                customerId: customer.id,
+                paymentMethod: input.paymentMethod,
+                subtotal,
+            });
+
+            discount = promotionRedemption.discount;
+
+            if (promotionRedemption.freeDelivery) {
+                deliveryFee = new Prisma.Decimal(0);
+            }
+        }
+
+        const total = subtotal.add(deliveryFee).sub(discount);
+
+        /*
+         * O valor recebido em dinheiro precisa ser comparado com
+         * o total final, já considerando a promoção.
+         */
+        if (input.paymentMethod === "CASH" && input.cashReceived !== undefined) {
+            const cashReceived = new Prisma.Decimal(input.cashReceived);
+
+            if (cashReceived.lt(total)) {
+                throw new Error("O valor em dinheiro é menor que o total do pedido.");
+            }
+        }
+
         let addressId: string | null = null;
 
         let deliveryAddress: {
@@ -311,6 +347,25 @@ export async function createOrder(input: CheckoutInput) {
             }
 
             await createComboOrderItem(tx, order.id, item);
+        }
+
+        /*
+         * O resgate só é consumido depois que o pedido e todos os
+         * seus itens foram criados com sucesso.
+         *
+         * Como tudo acontece dentro da mesma transaction, qualquer
+         * erro posterior também desfaz esta atualização.
+         */
+        if (promotionRedemption) {
+            await tx.promotionRedemption.update({
+                where: {
+                    id: promotionRedemption.redemption.id,
+                },
+                data: {
+                    usedAt: new Date(),
+                    orderId: order.id,
+                },
+            });
         }
 
         return {
