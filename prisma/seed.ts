@@ -647,6 +647,7 @@ async function main() {
             discountFixed: null,
             freeDelivery: true,
             minOrderValue: null,
+            requiresRedemption: true,
             redemptionValidityDays: 30,
             active: true,
         },
@@ -663,6 +664,7 @@ async function main() {
             startsAt: new Date(),
             endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
 
+            requiresRedemption: true,
             redemptionValidityDays: 30,
             active: true,
         },

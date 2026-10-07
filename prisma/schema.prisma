@@ -471,8 +471,10 @@ model Promotion {
   startsAt DateTime
   endsAt   DateTime
 
-  redemptionValidityDays Int     @default(30)
-  active                 Boolean @default(true)
+  requiresRedemption     Boolean @default(false)
+  redemptionValidityDays Int?
+
+  active Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
