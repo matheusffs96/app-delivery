@@ -59,6 +59,8 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     const [error, setError] = useState("");
     const [redemption, setRedemption] = useState<Redemption | null>(null);
 
+    const [checkingRedemption, setCheckingRedemption] = useState(false);
+
     const stepIndex = {
         presentation: 0,
         customer: 1,
@@ -77,7 +79,7 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
         }));
     }
 
-    function continueCustomer() {
+    async function continueCustomer() {
         setError("");
 
         if (name.trim().length < 2) {
@@ -92,7 +94,35 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
             return;
         }
 
-        setStep("address");
+        try {
+            setCheckingRedemption(true);
+
+            const response = await fetch(
+                `/api/promotions/${encodeURIComponent(
+                    promotion.slug
+                )}/redemption?phone=${encodeURIComponent(normalizedPhone)}`
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error ?? "Não foi possível consultar seu resgate.");
+            }
+
+            if (data.redemption) {
+                setRedemption(data.redemption);
+                setStep("success");
+                return;
+            }
+
+            setStep("address");
+        } catch (error) {
+            setError(
+                error instanceof Error ? error.message : "Não foi possível consultar seu resgate."
+            );
+        } finally {
+            setCheckingRedemption(false);
+        }
     }
 
     async function searchCep() {
@@ -356,9 +386,10 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                         <button
                             type="button"
                             onClick={continueCustomer}
-                            className="bg-primary text-primary-foreground h-12 w-full rounded-xl font-semibold"
+                            disabled={checkingRedemption}
+                            className="bg-primary text-primary-foreground h-12 w-full rounded-xl font-semibold disabled:opacity-60"
                         >
-                            Continuar
+                            {checkingRedemption ? "Verificando..." : "Continuar"}
                         </button>
                     </div>
                 </section>
