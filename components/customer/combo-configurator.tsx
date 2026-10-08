@@ -44,17 +44,7 @@ function ConfigurationSummary({ selection }: { selection: CartComboItemSelection
         return <p className="text-muted-foreground mt-1 text-sm">Personalização necessária</p>;
     }
 
-    return (
-        <div className="text-muted-foreground mt-2 space-y-1 text-sm">
-            <ConfigurationDetails configuration={configuration} className="mt-2" />
-
-            {configuration.notes && (
-                <p>
-                    <span className="text-foreground font-medium">Obs.:</span> {configuration.notes}
-                </p>
-            )}
-        </div>
-    );
+    return <ConfigurationDetails configuration={configuration} className="mt-2" />;
 }
 
 export function ComboConfigurator({ product }: Props) {

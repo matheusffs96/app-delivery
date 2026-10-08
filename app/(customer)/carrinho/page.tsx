@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+
 import { useCartStore } from "@/stores/cart-store";
-import type { ComboCartItem, ProductCartItem } from "@/types/cart";
+import type { ComboCartItem } from "@/types/cart";
 import { ConfigurationDetails } from "@/components/customer/configuration-details";
 
 function formatCurrency(value: number) {
@@ -14,7 +16,7 @@ function formatCurrency(value: number) {
 
 function ComboConfigurationDetails({ item }: { item: ComboCartItem }) {
     return (
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-3">
             {item.comboSelections.map((comboItem) => {
                 const repeatedCount = item.comboSelections.filter(
                     (other) => other.comboItemId === comboItem.comboItemId
@@ -23,20 +25,21 @@ function ComboConfigurationDetails({ item }: { item: ComboCartItem }) {
                 return (
                     <div
                         key={`${comboItem.comboItemId}-${comboItem.instance}`}
-                        className="border-l pl-3"
+                        className="bg-muted/40 rounded-lg border p-3"
                     >
-                        <div className="text-sm font-medium">
+                        <p className="text-sm font-semibold">
                             {comboItem.productName}
                             {repeatedCount > 1 ? ` #${comboItem.instance}` : ""}
-                        </div>
+                        </p>
 
                         {comboItem.configuration ? (
                             <ConfigurationDetails
                                 configuration={comboItem.configuration}
-                                className="mt-1"
+                                variant="chips"
+                                className="mt-3"
                             />
                         ) : (
-                            <p className="text-muted-foreground mt-1 text-sm">
+                            <p className="text-muted-foreground mt-1 text-xs">
                                 {comboItem.productDescription || "Incluído no combo"}
                             </p>
                         )}
@@ -55,10 +58,16 @@ export default function CartPage() {
 
     const subtotal = items.reduce((total, item) => total + item.unitPrice * item.quantity, 0);
 
+    const totalQuantity = items.reduce((total, item) => total + item.quantity, 0);
+
     if (items.length === 0) {
         return (
             <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 py-10">
-                <h1 className="text-2xl font-bold">Seu carrinho está vazio</h1>
+                <div className="bg-muted mb-5 flex h-16 w-16 items-center justify-center rounded-full">
+                    <ShoppingBag className="text-muted-foreground" size={28} />
+                </div>
+
+                <h1 className="text-center text-2xl font-bold">Seu carrinho está vazio</h1>
 
                 <p className="text-muted-foreground mt-2 text-center">
                     Escolha algum item do cardápio para começar seu pedido.
@@ -75,73 +84,88 @@ export default function CartPage() {
     }
 
     return (
-        <main className="mx-auto max-w-2xl px-4 py-6">
-            <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Seu carrinho</h1>
+        <main className="mx-auto w-full max-w-2xl px-4 py-6">
+            <header className="mb-6 flex items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold">Seu carrinho</h1>
+
+                    <p className="text-muted-foreground mt-1 text-sm">
+                        {totalQuantity} {totalQuantity === 1 ? "item no pedido" : "itens no pedido"}
+                    </p>
+                </div>
 
                 <button
                     type="button"
                     onClick={clear}
-                    className="text-muted-foreground hover:text-destructive text-sm"
+                    className="text-muted-foreground hover:text-destructive flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs transition-colors"
                 >
-                    Limpar carrinho
+                    <Trash2 size={15} />
+                    Limpar
                 </button>
-            </div>
+            </header>
 
             <div className="space-y-4">
                 {items.map((item) => (
-                    <article key={item.id} className="rounded-xl border p-4">
-                        <div className="flex justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                                <h2 className="font-semibold">{item.productName}</h2>
+                    <article key={item.id} className="bg-card overflow-hidden rounded-xl border">
+                        <div className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <h2 className="font-semibold">{item.productName}</h2>
 
-                                <p className="text-muted-foreground mt-1 text-sm">
-                                    {formatCurrency(item.unitPrice)} cada
-                                </p>
+                                    <p className="text-muted-foreground mt-1 text-xs">
+                                        {formatCurrency(item.unitPrice)} cada
+                                    </p>
+                                </div>
 
-                                {item.type === "PRODUCT" ? (
-                                    <ConfigurationDetails
-                                        configuration={item.configuration}
-                                        className="mt-3"
-                                    />
-                                ) : (
-                                    <ComboConfigurationDetails item={item} />
-                                )}
+                                <strong className="shrink-0 text-base">
+                                    {formatCurrency(item.unitPrice * item.quantity)}
+                                </strong>
                             </div>
 
-                            <strong>{formatCurrency(item.unitPrice * item.quantity)}</strong>
+                            {item.type === "PRODUCT" ? (
+                                <ConfigurationDetails
+                                    configuration={item.configuration}
+                                    variant="chips"
+                                    className="mt-4"
+                                />
+                            ) : (
+                                <ComboConfigurationDetails item={item} />
+                            )}
                         </div>
 
-                        <div className="mt-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
+                        <div className="bg-muted/20 flex items-center justify-between gap-3 border-t px-4 py-3">
+                            <div className="bg-background flex items-center rounded-lg border">
                                 <button
                                     type="button"
                                     onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg border"
+                                    disabled={item.quantity <= 1}
+                                    className="hover:bg-muted flex h-10 w-10 items-center justify-center rounded-l-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                                     aria-label="Diminuir quantidade"
                                 >
-                                    −
+                                    <Minus size={16} />
                                 </button>
 
-                                <span className="min-w-6 text-center font-medium">
+                                <span className="min-w-8 text-center text-sm font-semibold">
                                     {item.quantity}
                                 </span>
 
                                 <button
                                     type="button"
                                     onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                    className="flex h-9 w-9 items-center justify-center rounded-lg border"
+                                    className="hover:bg-muted flex h-10 w-10 items-center justify-center rounded-r-lg transition-colors"
                                     aria-label="Aumentar quantidade"
                                 >
-                                    +
+                                    <Plus size={16} />
                                 </button>
                             </div>
 
                             <button
                                 type="button"
                                 onClick={() => removeItem(item.id)}
-                                className="text-destructive text-sm"
+                                className="text-destructive hover:bg-destructive/10 flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-sm transition-colors"
+                                aria-label={`Remover ${item.productName}`}
                             >
+                                <Trash2 size={16} />
                                 Remover
                             </button>
                         </div>
@@ -149,24 +173,30 @@ export default function CartPage() {
                 ))}
             </div>
 
-            <section className="mt-8 rounded-xl border p-4">
-                <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Subtotal</span>
+            <section className="mt-6 space-y-3 rounded-xl border p-4">
+                <h2 className="font-semibold">Resumo do pedido</h2>
 
-                    <strong className="text-lg">{formatCurrency(subtotal)}</strong>
+                <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground text-sm">
+                        Subtotal ({totalQuantity} {totalQuantity === 1 ? "item" : "itens"})
+                    </span>
+
+                    <strong>{formatCurrency(subtotal)}</strong>
                 </div>
 
-                <p className="text-muted-foreground mt-2 text-sm">
+                <p className="text-muted-foreground border-t pt-3 text-xs">
                     Taxa de entrega e descontos serão calculados no checkout.
                 </p>
             </section>
 
-            <div className="bg-background sticky bottom-0 mt-6 border-t py-4">
+            <div className="bg-background sticky bottom-0 z-10 mt-6 border-t py-4">
                 <Link
                     href="/checkout"
-                    className="bg-primary text-primary-foreground block w-full rounded-lg p-4 text-center font-semibold"
+                    className="bg-primary text-primary-foreground flex min-h-14 w-full items-center justify-between gap-3 rounded-lg px-5 font-semibold transition-opacity hover:opacity-90"
                 >
-                    Continuar — {formatCurrency(subtotal)}
+                    <span>Continuar pedido</span>
+
+                    <span>{formatCurrency(subtotal)}</span>
                 </Link>
             </div>
         </main>

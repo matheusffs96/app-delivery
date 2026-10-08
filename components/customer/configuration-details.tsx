@@ -3,9 +3,10 @@ import type { CartItemConfiguration } from "@/types/cart";
 type Props = {
     configuration: CartItemConfiguration;
     className?: string;
+    variant?: "text" | "chips";
 };
 
-export function ConfigurationDetails({ configuration, className = "" }: Props) {
+export function ConfigurationDetails({ configuration, className = "", variant = "text" }: Props) {
     const choices = [...configuration.options, ...configuration.components];
 
     const groups = choices.reduce<Record<string, typeof choices>>((result, choice) => {
@@ -17,33 +18,65 @@ export function ConfigurationDetails({ configuration, className = "" }: Props) {
         return result;
     }, {});
 
-    function formatChoices(items: { name: string; quantity: number }[]) {
-        return items
-            .map((item) => (item.quantity > 1 ? `${item.quantity}x ${item.name}` : item.name))
-            .join(", ");
+    const displayGroups = [
+        ...Object.entries(groups).map(([name, items]) => ({
+            name,
+            items,
+        })),
+        ...(configuration.addons.length > 0
+            ? [{ name: "Adicionais", items: configuration.addons }]
+            : []),
+    ];
+
+    function formatChoice(choice: { name: string; quantity: number }) {
+        return choice.quantity > 1 ? `${choice.quantity}x ${choice.name}` : choice.name;
+    }
+
+    if (variant === "chips") {
+        return (
+            <div className={`space-y-3 ${className}`}>
+                {displayGroups.map((group) => (
+                    <div key={group.name} className="space-y-1.5">
+                        <p className="text-muted-foreground text-xs font-medium">{group.name}</p>
+
+                        <div className="flex flex-wrap gap-1.5">
+                            {group.items.map((choice, index) => (
+                                <span
+                                    key={`${choice.id}-${index}`}
+                                    className="bg-muted rounded-md px-2.5 py-1 text-xs"
+                                >
+                                    {formatChoice(choice)}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+
+                {configuration.notes && (
+                    <p className="text-muted-foreground text-xs">
+                        <span className="font-medium">Observação:</span> {configuration.notes}
+                    </p>
+                )}
+            </div>
+        );
     }
 
     return (
         <div className={`space-y-1 text-sm ${className}`}>
-            {Object.entries(groups).map(([name, items]) => (
-                <p key={name}>
-                    <span className="font-medium">{name}: </span>
-                    <span className="text-muted-foreground">{formatChoices(items)}</span>
-                </p>
-            ))}
+            {displayGroups.map((group) => (
+                <p key={group.name}>
+                    <span className="font-medium">{group.name}: </span>
 
-            {configuration.addons.length > 0 && (
-                <p>
-                    <span className="font-medium">Adicionais: </span>
                     <span className="text-muted-foreground">
-                        {formatChoices(configuration.addons)}
+                        {group.items.map(formatChoice).join(", ")}
                     </span>
                 </p>
-            )}
+            ))}
 
             {configuration.notes && (
                 <p>
                     <span className="font-medium">Observação: </span>
+
                     <span className="text-muted-foreground">{configuration.notes}</span>
                 </p>
             )}
