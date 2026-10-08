@@ -9,6 +9,8 @@ import { useCartStore } from "@/stores/cart-store";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { ConfigurationDetails } from "@/components/customer/configuration-details";
+
 type Props = {
     product: ProductDetail;
 };
@@ -44,30 +46,7 @@ function ConfigurationSummary({ selection }: { selection: CartComboItemSelection
 
     return (
         <div className="text-muted-foreground mt-2 space-y-1 text-sm">
-            {configuration.options.length > 0 && (
-                <p>
-                    <span className="text-foreground font-medium">Opções:</span>{" "}
-                    {configuration.options.map((option) => option.name).join(", ")}
-                </p>
-            )}
-
-            {configuration.components.length > 0 && (
-                <p>
-                    <span className="text-foreground font-medium">Itens:</span>{" "}
-                    {configuration.components.map((component) => component.name).join(", ")}
-                </p>
-            )}
-
-            {configuration.addons.length > 0 && (
-                <p>
-                    <span className="text-foreground font-medium">Adicionais:</span>{" "}
-                    {configuration.addons
-                        .map((addon) =>
-                            addon.quantity > 1 ? `${addon.quantity}x ${addon.name}` : addon.name
-                        )
-                        .join(", ")}
-                </p>
-            )}
+            <ConfigurationDetails configuration={configuration} className="mt-2" />
 
             {configuration.notes && (
                 <p>

@@ -3,67 +3,13 @@
 import Link from "next/link";
 import { useCartStore } from "@/stores/cart-store";
 import type { ComboCartItem, ProductCartItem } from "@/types/cart";
+import { ConfigurationDetails } from "@/components/customer/configuration-details";
 
 function formatCurrency(value: number) {
     return new Intl.NumberFormat("pt-BR", {
         style: "currency",
         currency: "BRL",
     }).format(value);
-}
-
-function ProductConfigurationDetails({ item }: { item: ProductCartItem }) {
-    const choices = [...item.configuration.options, ...item.configuration.components];
-
-    const groups = choices.reduce<Record<string, typeof choices>>((result, choice) => {
-        const groupName = choice.groupName ?? "Opções";
-
-        result[groupName] ??= [];
-        result[groupName].push(choice);
-
-        return result;
-    }, {});
-
-    return (
-        <div className="mt-3 space-y-1 text-sm">
-            {Object.entries(groups).map(([groupName, choices]) => (
-                <div key={groupName}>
-                    <span className="font-medium">{groupName}: </span>
-
-                    <span className="text-muted-foreground">
-                        {choices
-                            .map((choice) =>
-                                choice.quantity > 1
-                                    ? `${choice.quantity}x ${choice.name}`
-                                    : choice.name
-                            )
-                            .join(", ")}
-                    </span>
-                </div>
-            ))}
-
-            {item.configuration.addons.length > 0 && (
-                <div>
-                    <span className="font-medium">Adicionais: </span>
-
-                    <span className="text-muted-foreground">
-                        {item.configuration.addons
-                            .map((addon) =>
-                                addon.quantity > 1 ? `${addon.quantity}x ${addon.name}` : addon.name
-                            )
-                            .join(", ")}
-                    </span>
-                </div>
-            )}
-
-            {item.configuration.notes && (
-                <div>
-                    <span className="font-medium">Observação: </span>
-
-                    <span className="text-muted-foreground">{item.configuration.notes}</span>
-                </div>
-            )}
-        </div>
-    );
 }
 
 function ComboConfigurationDetails({ item }: { item: ComboCartItem }) {
@@ -85,32 +31,10 @@ function ComboConfigurationDetails({ item }: { item: ComboCartItem }) {
                         </div>
 
                         {comboItem.configuration ? (
-                            <div className="text-muted-foreground mt-1 space-y-1 text-sm">
-                                {comboItem.configuration.options.map((option) => (
-                                    <div key={option.id}>
-                                        {option.quantity > 1 && `${option.quantity}x `}
-                                        {option.name}
-                                    </div>
-                                ))}
-
-                                {comboItem.configuration.components.map((component) => (
-                                    <div key={component.id}>
-                                        {component.quantity > 1 && `${component.quantity}x `}
-                                        {component.name}
-                                    </div>
-                                ))}
-
-                                {comboItem.configuration.addons.map((addon) => (
-                                    <div key={addon.id}>
-                                        {addon.quantity > 1 && `${addon.quantity}x `}
-                                        {addon.name}
-                                    </div>
-                                ))}
-
-                                {comboItem.configuration.notes && (
-                                    <div>Obs.: {comboItem.configuration.notes}</div>
-                                )}
-                            </div>
+                            <ConfigurationDetails
+                                configuration={comboItem.configuration}
+                                className="mt-1"
+                            />
                         ) : (
                             <p className="text-muted-foreground mt-1 text-sm">
                                 {comboItem.productDescription || "Incluído no combo"}
@@ -176,7 +100,10 @@ export default function CartPage() {
                                 </p>
 
                                 {item.type === "PRODUCT" ? (
-                                    <ProductConfigurationDetails item={item} />
+                                    <ConfigurationDetails
+                                        configuration={item.configuration}
+                                        className="mt-3"
+                                    />
                                 ) : (
                                     <ComboConfigurationDetails item={item} />
                                 )}
