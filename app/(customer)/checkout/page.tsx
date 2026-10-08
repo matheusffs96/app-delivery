@@ -1722,14 +1722,6 @@ export default function CheckoutPage() {
                 ))}
             </section>
 
-            {/* <section className="mt-8 rounded-xl border p-4">
-                <div className="flex items-center justify-between">
-                    <span>Subtotal</span>
-
-                    <strong className="text-lg">{formatCurrency(checkout.subtotal)}</strong>
-                </div>
-            </section> */}
-
             <section className="mt-8 space-y-3 rounded-xl border p-4">
                 <div className="flex items-center justify-between">
                     <span>Subtotal</span>
@@ -1768,7 +1760,7 @@ export default function CheckoutPage() {
                 </div>
             )}
 
-            <div className="bg-background sticky bottom-0 mt-8 border-t py-4">
+            <div className="bg-background sticky bottom-16 z-10 mt-8 border-t py-4 sm:bottom-0">
                 <button
                     type="button"
                     onClick={handleContinue}

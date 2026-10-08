@@ -189,7 +189,7 @@ export default function CartPage() {
                 </p>
             </section>
 
-            <div className="bg-background sticky bottom-0 z-10 mt-6 border-t py-4">
+            <div className="bg-background sticky bottom-16 z-10 mt-6 border-t py-4 sm:bottom-0">
                 <Link
                     href="/checkout"
                     className="bg-primary text-primary-foreground flex min-h-14 w-full items-center justify-between gap-3 rounded-lg px-5 font-semibold transition-opacity hover:opacity-90"

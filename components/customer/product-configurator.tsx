@@ -788,7 +788,7 @@ export function ProductConfigurator({
                 </div>
             )}
 
-            <div className="bg-background sticky bottom-0 space-y-2 border-t py-4">
+            <div className="bg-background sticky bottom-16 z-10 space-y-2 border-t py-4 sm:bottom-0">
                 <button
                     type="button"
                     onClick={handleSubmit}
