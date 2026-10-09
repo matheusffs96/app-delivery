@@ -43,7 +43,7 @@ export function CustomerNavigation() {
         <>
             <nav
                 aria-label="Navegação principal"
-                className="bg-background hidden border-b sm:block"
+                className="bg-background fixed inset-x-0 top-0 z-50 hidden border-b sm:block"
             >
                 <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
                     <Link href="/" className="font-bold">
