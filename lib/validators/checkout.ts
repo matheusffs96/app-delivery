@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { productSelectionSchema } from "@/lib/validators/product";
 import { customerIdentificationSchema } from "@/lib/validators/customer";
+import { adminAdjustmentsSchema } from "./admin-adjustments";
 
 const checkoutProductItemSchema = z.object({
     type: z.literal("PRODUCT"),
@@ -66,6 +67,8 @@ export const checkoutSchema = z
         promotionCode: z.string().trim().optional(),
 
         cashReceived: z.number().positive().optional(),
+
+        adminAdjustments: adminAdjustmentsSchema.optional(),
     })
     .superRefine((data, ctx) => {
         if (data.fulfillmentType === "DELIVERY" && !data.addressId && !data.address) {
@@ -81,6 +84,14 @@ export const checkoutSchema = z
                 code: "custom",
                 path: ["cashReceived"],
                 message: "Informe o valor que será pago em dinheiro.",
+            });
+        }
+
+        if (data.adminAdjustments && data.promotionCode?.trim()) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["adminAdjustments"],
+                message: "Não é possível combinar cupom e ajustes administrativos.",
             });
         }
     });
