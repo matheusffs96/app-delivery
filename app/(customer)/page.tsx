@@ -44,7 +44,7 @@ export default async function CustomerHomePage() {
     const availableCategories = categories.filter((category) => category.products.length > 0);
 
     return (
-        <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:py-8">
+        <main className="mx-auto w-full max-w-4xl px-4 py-6 lg:max-w-none lg:px-0 lg:py-0">
             <header className="mb-8 space-y-2">
                 <p className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">
                     Los Hermanos

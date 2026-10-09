@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ComboConfigurator } from "@/components/customer/combo-configurator";
 import { ProductConfigurator } from "@/components/customer/product-configurator";
 import type { ProductDetail } from "@/types/product";
+import { ProductHeader } from "@/components/customer/product-header";
 
 type Props = {
     params: Promise<{
@@ -33,9 +34,15 @@ export default async function ProductPage({ params }: Props) {
         notFound();
     }
 
-    if (product.type === "COMBO") {
-        return <ComboConfigurator product={product} />;
-    }
+    return (
+        <div className="space-y-8">
+            <ProductHeader product={product} />
 
-    return <ProductConfigurator product={product} />;
+            {product.type === "COMBO" ? (
+                <ComboConfigurator product={product} />
+            ) : (
+                <ProductConfigurator product={product} />
+            )}
+        </div>
+    );
 }
