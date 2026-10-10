@@ -647,6 +647,11 @@ async function main() {
             discountFixed: null,
             freeDelivery: true,
             minOrderValue: null,
+
+            // Período temporário para testes.
+            startsAt: new Date(),
+            endsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+
             requiresRedemption: true,
             redemptionValidityDays: 30,
             active: true,

@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { PromotionRedemptionFlow } from "@/components/promotion/promotion-redemption-flow";
 import { prisma } from "@/lib/prisma";
 
@@ -68,13 +66,6 @@ function UnavailablePromotion() {
                 <p className="text-muted-foreground mt-3">
                     O período para resgatar esta promoção não está disponível.
                 </p>
-
-                <Link
-                    href="/"
-                    className="bg-primary text-primary-foreground mt-8 inline-flex h-12 items-center justify-center rounded-xl px-6 font-semibold"
-                >
-                    Ver cardápio
-                </Link>
             </div>
         </main>
     );

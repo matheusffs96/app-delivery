@@ -5,6 +5,9 @@ import { PromotionRedemptionError, redeemPromotion } from "@/lib/services/promot
 
 import { promotionRedemptionSchema } from "@/lib/validators/promotion-redemption";
 
+import { promotionRedeemRateLimit } from "@/lib/rate-limit";
+import { enforcePromotionRateLimit } from "@/lib/promotion-request-limit";
+
 type RouteContext = {
     params: Promise<{
         slug: string;
@@ -14,6 +17,11 @@ type RouteContext = {
 export async function POST(request: NextRequest, { params }: RouteContext) {
     try {
         const { slug } = await params;
+
+        const limited = await enforcePromotionRateLimit(request, promotionRedeemRateLimit);
+
+        if (limited) return limited;
+
         const body = await request.json();
 
         const input = promotionRedemptionSchema.parse(body);

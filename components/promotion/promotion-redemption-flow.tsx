@@ -69,9 +69,10 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
     const [error, setError] = useState("");
     const [redemption, setRedemption] = useState<Redemption | null>(null);
 
-    const [checkingRedemption, setCheckingRedemption] = useState(false);
     const [customerErrors, setCustomerErrors] = useState<CustomerErrors>({});
     const [addressErrors, setAddressErrors] = useState<AddressErrors>({});
+
+    const [checkingRedemption, setCheckingRedemption] = useState(false);
 
     const stepIndex = {
         presentation: 0,
@@ -125,41 +126,37 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
         setCustomerErrors(errors);
 
         if (Object.keys(errors).length > 0) {
-            requestAnimationFrame(() => {
-                document.querySelector('[aria-invalid="true"]')?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "center",
-                });
-            });
-
             return;
         }
 
         try {
             setCheckingRedemption(true);
 
-            const response = await fetch(
-                `/api/promotions/${encodeURIComponent(
-                    promotion.slug
-                )}/redemption?phone=${encodeURIComponent(normalizedPhone)}`
-            );
+            const response = await fetch(`/api/promotions/${promotion.slug}/check-redemption`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ phone: normalizedPhone }),
+            });
 
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.error ?? "Não foi possível consultar seu resgate.");
+                throw new Error(data.error ?? "Não foi possível verificar o cadastro.");
             }
 
-            if (data.redemption) {
-                setRedemption(data.redemption);
-                setStep("success");
+            if (data.alreadyRedeemed) {
+                setError(
+                    "Este telefone já possui um resgate da promoção. Entre em contato com o Los Hermanos para recuperar seu código."
+                );
                 return;
             }
 
             setStep("address");
         } catch (error) {
             setError(
-                error instanceof Error ? error.message : "Não foi possível consultar seu resgate."
+                error instanceof Error ? error.message : "Não foi possível verificar o cadastro."
             );
         } finally {
             setCheckingRedemption(false);
@@ -464,6 +461,12 @@ export function PromotionRedemptionFlow({ promotion }: Props) {
                                 className="bg-background focus:ring-ring h-12 w-full rounded-xl border px-4 outline-none focus:ring-2"
                             />
                         </Field>
+
+                        {error && (
+                            <p role="alert" className="text-destructive text-sm">
+                                {error}
+                            </p>
+                        )}
 
                         <button
                             type="button"

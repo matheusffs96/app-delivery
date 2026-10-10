@@ -119,16 +119,8 @@ export async function redeemPromotion(slug: string, input: PromotionRedemptionIn
         });
 
         if (customer) {
-            customer = await tx.customer.update({
-                where: {
-                    id: customer.id,
-                },
-                data: {
-                    name: input.name.trim(),
-                    ...(email ? { email } : {}),
-                    ...(cpf ? { cpf } : {}),
-                },
-            });
+            // Não alteramos dados de clientes existentes
+            // sem autenticação ou confirmação de titularidade.
         } else {
             customer = await tx.customer.create({
                 data: {
@@ -150,10 +142,31 @@ export async function redeemPromotion(slug: string, input: PromotionRedemptionIn
         });
 
         if (existingRedemption) {
-            return {
-                redemption: existingRedemption,
-                alreadyRedeemed: true,
-            };
+            throw new PromotionRedemptionError(
+                "Já existe um resgate associado a este cadastro. Entre em contato com o Los Hermanos para recuperar seu código.",
+                409
+            );
+        }
+
+        /*
+         * A promoção de lançamento é exclusiva para
+         * clientes que ainda não realizaram pedidos.
+         */
+        if (promotion.slug === "lancamento") {
+            const previousOrder = await tx.order.findFirst({
+                where: {
+                    customerId: customer.id,
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            if (previousOrder) {
+                throw new PromotionRedemptionError(
+                    "Esta promoção é exclusiva para o primeiro pedido."
+                );
+            }
         }
 
         await tx.address.create({
